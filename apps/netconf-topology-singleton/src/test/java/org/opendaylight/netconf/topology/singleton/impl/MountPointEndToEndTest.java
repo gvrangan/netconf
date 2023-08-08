@@ -18,7 +18,6 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.spy;
 import static org.mockito.Mockito.timeout;
 import static org.mockito.Mockito.verify;
@@ -35,6 +34,7 @@ import com.google.common.util.concurrent.MoreExecutors;
 import com.google.common.util.concurrent.SettableFuture;
 import com.typesafe.config.ConfigFactory;
 import io.netty.util.concurrent.EventExecutor;
+import io.netty.util.concurrent.Future;
 import io.netty.util.concurrent.GlobalEventExecutor;
 import java.io.File;
 import java.util.Iterator;
@@ -44,6 +44,7 @@ import java.util.Map.Entry;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import org.apache.commons.io.FileUtils;
@@ -55,9 +56,6 @@ import org.junit.runner.RunWith;
 import org.mockito.Mock;
 import org.mockito.junit.MockitoJUnitRunner;
 import org.opendaylight.aaa.encrypt.AAAEncryptionService;
-import org.opendaylight.controller.cluster.ActorSystemProvider;
-import org.opendaylight.controller.config.threadpool.ScheduledThreadPool;
-import org.opendaylight.controller.config.threadpool.ThreadPool;
 import org.opendaylight.mdsal.binding.api.DataBroker;
 import org.opendaylight.mdsal.binding.api.DataObjectModification;
 import org.opendaylight.mdsal.binding.api.DataTreeIdentifier;
@@ -71,9 +69,7 @@ import org.opendaylight.mdsal.binding.api.WriteTransaction;
 import org.opendaylight.mdsal.binding.dom.adapter.test.AbstractConcurrentDataBrokerTest;
 import org.opendaylight.mdsal.binding.dom.codec.api.BindingNormalizedNodeSerializer;
 import org.opendaylight.mdsal.binding.runtime.spi.BindingRuntimeHelpers;
-import org.opendaylight.mdsal.binding.spec.reflect.BindingReflections;
 import org.opendaylight.mdsal.common.api.LogicalDatastoreType;
-import org.opendaylight.mdsal.dom.api.DOMActionProviderService;
 import org.opendaylight.mdsal.dom.api.DOMActionService;
 import org.opendaylight.mdsal.dom.api.DOMDataBroker;
 import org.opendaylight.mdsal.dom.api.DOMDataTreeReadOperations;
@@ -85,7 +81,6 @@ import org.opendaylight.mdsal.dom.api.DOMMountPointService;
 import org.opendaylight.mdsal.dom.api.DOMRpcAvailabilityListener;
 import org.opendaylight.mdsal.dom.api.DOMRpcIdentifier;
 import org.opendaylight.mdsal.dom.api.DOMRpcImplementation;
-import org.opendaylight.mdsal.dom.api.DOMRpcProviderService;
 import org.opendaylight.mdsal.dom.api.DOMRpcResult;
 import org.opendaylight.mdsal.dom.api.DOMRpcService;
 import org.opendaylight.mdsal.dom.api.DOMService;
@@ -97,33 +92,34 @@ import org.opendaylight.mdsal.singleton.common.api.ClusterSingletonServiceProvid
 import org.opendaylight.mdsal.singleton.common.api.ClusterSingletonServiceRegistration;
 import org.opendaylight.mdsal.singleton.common.api.ServiceGroupIdentifier;
 import org.opendaylight.mdsal.singleton.dom.impl.DOMClusterSingletonServiceProviderImpl;
+import org.opendaylight.netconf.api.CapabilityURN;
 import org.opendaylight.netconf.client.NetconfClientDispatcher;
-import org.opendaylight.netconf.nettyutil.ReconnectFuture;
-import org.opendaylight.netconf.sal.connect.api.DeviceActionFactory;
-import org.opendaylight.netconf.sal.connect.api.RemoteDeviceServices;
-import org.opendaylight.netconf.sal.connect.api.RemoteDeviceServices.Rpcs;
-import org.opendaylight.netconf.sal.connect.api.SchemaResourceManager;
-import org.opendaylight.netconf.sal.connect.impl.DefaultSchemaResourceManager;
-import org.opendaylight.netconf.sal.connect.netconf.NetconfDeviceSchema;
-import org.opendaylight.netconf.sal.connect.netconf.listener.NetconfDeviceCapabilities;
-import org.opendaylight.netconf.sal.connect.netconf.listener.NetconfSessionPreferences;
-import org.opendaylight.netconf.sal.connect.netconf.util.NetconfMessageTransformUtil;
+import org.opendaylight.netconf.client.mdsal.NetconfDeviceCapabilities;
+import org.opendaylight.netconf.client.mdsal.NetconfDeviceSchema;
+import org.opendaylight.netconf.client.mdsal.api.CredentialProvider;
+import org.opendaylight.netconf.client.mdsal.api.DeviceActionFactory;
+import org.opendaylight.netconf.client.mdsal.api.NetconfSessionPreferences;
+import org.opendaylight.netconf.client.mdsal.api.RemoteDeviceServices;
+import org.opendaylight.netconf.client.mdsal.api.RemoteDeviceServices.Rpcs;
+import org.opendaylight.netconf.client.mdsal.api.SchemaResourceManager;
+import org.opendaylight.netconf.client.mdsal.api.SslHandlerFactoryProvider;
+import org.opendaylight.netconf.client.mdsal.impl.DefaultSchemaResourceManager;
 import org.opendaylight.netconf.topology.singleton.impl.utils.ClusteringRpcException;
 import org.opendaylight.netconf.topology.singleton.impl.utils.NetconfTopologySetup;
 import org.opendaylight.netconf.topology.singleton.impl.utils.NetconfTopologyUtils;
+import org.opendaylight.netconf.topology.spi.DefaultNetconfClientConfigurationBuilderFactory;
+import org.opendaylight.netconf.topology.spi.NetconfClientConfigurationBuilderFactory;
+import org.opendaylight.netconf.topology.spi.NetconfNodeUtils;
 import org.opendaylight.yang.gen.v1.urn.ietf.params.xml.ns.yang.ietf.inet.types.rev130715.Host;
 import org.opendaylight.yang.gen.v1.urn.ietf.params.xml.ns.yang.ietf.inet.types.rev130715.IpAddress;
 import org.opendaylight.yang.gen.v1.urn.ietf.params.xml.ns.yang.ietf.inet.types.rev130715.Ipv4Address;
 import org.opendaylight.yang.gen.v1.urn.ietf.params.xml.ns.yang.ietf.inet.types.rev130715.PortNumber;
-import org.opendaylight.yang.gen.v1.urn.opendaylight.netconf.device.rev221225.ConnectionOper.ConnectionStatus;
-import org.opendaylight.yang.gen.v1.urn.opendaylight.netconf.device.rev221225.credentials.credentials.LoginPwUnencryptedBuilder;
-import org.opendaylight.yang.gen.v1.urn.opendaylight.netconf.device.rev221225.credentials.credentials.login.pw.unencrypted.LoginPasswordUnencryptedBuilder;
+import org.opendaylight.yang.gen.v1.urn.opendaylight.netconf.device.rev230430.ConnectionOper.ConnectionStatus;
+import org.opendaylight.yang.gen.v1.urn.opendaylight.netconf.device.rev230430.credentials.credentials.LoginPwUnencryptedBuilder;
+import org.opendaylight.yang.gen.v1.urn.opendaylight.netconf.device.rev230430.credentials.credentials.login.pw.unencrypted.LoginPasswordUnencryptedBuilder;
 import org.opendaylight.yang.gen.v1.urn.opendaylight.netconf.keystore.rev171017.Keystore;
 import org.opendaylight.yang.gen.v1.urn.opendaylight.netconf.node.topology.rev221225.NetconfNode;
 import org.opendaylight.yang.gen.v1.urn.opendaylight.netconf.node.topology.rev221225.NetconfNodeBuilder;
-import org.opendaylight.yang.gen.v1.urn.opendaylight.netconf.node.topology.rev221225.network.topology.topology.topology.types.TopologyNetconf;
-import org.opendaylight.yang.gen.v1.urn.opendaylight.netconf.topology.singleton.config.rev170419.Config;
-import org.opendaylight.yang.gen.v1.urn.opendaylight.netconf.topology.singleton.config.rev170419.ConfigBuilder;
 import org.opendaylight.yang.gen.v1.urn.opendaylight.params.xml.ns.yang.controller.md.sal.test.list.rev140701.GetTopInput;
 import org.opendaylight.yang.gen.v1.urn.opendaylight.params.xml.ns.yang.controller.md.sal.test.list.rev140701.GetTopOutputBuilder;
 import org.opendaylight.yang.gen.v1.urn.opendaylight.params.xml.ns.yang.controller.md.sal.test.list.rev140701.PutTopInputBuilder;
@@ -138,8 +134,6 @@ import org.opendaylight.yang.gen.v1.urn.tbd.params.xml.ns.yang.network.topology.
 import org.opendaylight.yang.gen.v1.urn.tbd.params.xml.ns.yang.network.topology.rev131021.network.topology.topology.NodeBuilder;
 import org.opendaylight.yang.gen.v1.urn.tbd.params.xml.ns.yang.network.topology.rev131021.network.topology.topology.NodeKey;
 import org.opendaylight.yangtools.concepts.ListenerRegistration;
-import org.opendaylight.yangtools.rfc8528.data.api.MountPointContext;
-import org.opendaylight.yangtools.rfc8528.data.util.EmptyMountPointContext;
 import org.opendaylight.yangtools.util.concurrent.FluentFutures;
 import org.opendaylight.yangtools.yang.binding.DataObject;
 import org.opendaylight.yangtools.yang.binding.InstanceIdentifier;
@@ -157,6 +151,7 @@ import org.opendaylight.yangtools.yang.data.api.YangInstanceIdentifier;
 import org.opendaylight.yangtools.yang.data.api.schema.ContainerNode;
 import org.opendaylight.yangtools.yang.data.api.schema.MapEntryNode;
 import org.opendaylight.yangtools.yang.data.api.schema.MapNode;
+import org.opendaylight.yangtools.yang.data.api.schema.MountPointContext;
 import org.opendaylight.yangtools.yang.data.api.schema.NormalizedNode;
 import org.opendaylight.yangtools.yang.data.impl.schema.Builders;
 import org.opendaylight.yangtools.yang.data.impl.schema.ImmutableNodes;
@@ -181,23 +176,21 @@ public class MountPointEndToEndTest extends AbstractBaseSchemasTest {
 
     private static final String TOP_MODULE_NAME = "opendaylight-mdsal-list-test";
     private static final String ACTOR_SYSTEM_NAME = "test";
-    private static final String TOPOLOGY_ID = TopologyNetconf.QNAME.getLocalName();
+    private static final String TOPOLOGY_ID = NetconfNodeUtils.DEFAULT_TOPOLOGY_NAME;
     private static final @NonNull KeyedInstanceIdentifier<Node, NodeKey> NODE_INSTANCE_ID =
         NetconfTopologyUtils.createTopologyNodeListPath(new NodeKey(new NodeId("node-id")), TOPOLOGY_ID);
 
     private static final String TEST_ROOT_DIRECTORY = "test-cache-root";
     private static final String TEST_DEFAULT_SUBDIR = "test-schema";
 
-    @Mock private DOMRpcProviderService mockRpcProviderRegistry;
     @Mock private RpcProviderService mockRpcProviderService;
-    @Mock private DOMActionProviderService mockActionProviderRegistry;
     @Mock private NetconfClientDispatcher mockClientDispatcher;
     @Mock private AAAEncryptionService mockEncryptionService;
-    @Mock private ThreadPool mockThreadPool;
-    @Mock private ScheduledThreadPool mockKeepaliveExecutor;
+    @Mock private ScheduledExecutorService mockKeepaliveExecutor;
     @Mock private DeviceActionFactory deviceActionFactory;
+    @Mock private CredentialProvider credentialProvider;
+    @Mock private SslHandlerFactoryProvider sslHandlerFactoryProvider;
 
-    @Mock private ActorSystemProvider mockMasterActorSystemProvider;
     @Mock private DOMMountPointListener masterMountPointListener;
     private final DOMMountPointService masterMountPointService = new DOMMountPointServiceImpl();
     private Rpcs.Normalized deviceRpcService;
@@ -210,7 +203,6 @@ public class MountPointEndToEndTest extends AbstractBaseSchemasTest {
 
     private volatile SettableFuture<MasterSalFacade> masterSalFacadeFuture = SettableFuture.create();
 
-    @Mock private ActorSystemProvider mockSlaveActorSystemProvider;
     @Mock private ClusterSingletonServiceProvider mockSlaveClusterSingletonServiceProvider;
     @Mock private ClusterSingletonServiceRegistration mockSlaveClusterSingletonServiceReg;
     @Mock private DOMMountPointListener slaveMountPointListener;
@@ -221,8 +213,8 @@ public class MountPointEndToEndTest extends AbstractBaseSchemasTest {
     private final SettableFuture<NetconfTopologyContext> slaveNetconfTopologyContextFuture = SettableFuture.create();
     private TransactionChain slaveTxChain;
 
+    private NetconfClientConfigurationBuilderFactory builderFactory;
     private final EventExecutor eventExecutor = GlobalEventExecutor.INSTANCE;
-    private final Config config = new ConfigBuilder().setWriteTransactionIdleTimeout(Uint16.ZERO).build();
     private EffectiveModelContext deviceSchemaContext;
     private YangModuleInfo topModuleInfo;
     private QName putTopRpcSchemaPath;
@@ -241,7 +233,7 @@ public class MountPointEndToEndTest extends AbstractBaseSchemasTest {
         resourceManager = new DefaultSchemaResourceManager(new DefaultYangParserFactory(), TEST_ROOT_DIRECTORY,
             TEST_DEFAULT_SUBDIR);
 
-        topModuleInfo = BindingReflections.getModuleInfo(Top.class);
+        topModuleInfo = BindingRuntimeHelpers.getYangModuleInfo(Top.class);
 
         deviceSchemaContext = BindingRuntimeHelpers.createEffectiveModel(Top.class);
 
@@ -267,13 +259,15 @@ public class MountPointEndToEndTest extends AbstractBaseSchemasTest {
             }
         };
 
+        builderFactory = new DefaultNetconfClientConfigurationBuilderFactory(mockEncryptionService, credentialProvider,
+            sslHandlerFactoryProvider);
+
         setupMaster();
 
         setupSlave();
 
         yangNodeInstanceId = bindingToNormalized.toYangInstanceIdentifier(NODE_INSTANCE_ID);
-
-        doReturn(mock(ReconnectFuture.class)).when(mockClientDispatcher).createReconnectingClient(any());
+        doReturn(mock(Future.class)).when(mockClientDispatcher).createClient(any());
 
         LOG.info("****** Setup complete");
     }
@@ -300,44 +294,38 @@ public class MountPointEndToEndTest extends AbstractBaseSchemasTest {
         masterClusterSingletonServiceProvider = new DOMClusterSingletonServiceProviderImpl();
         masterClusterSingletonServiceProvider.initializeProvider();
 
-        doReturn(masterSystem).when(mockMasterActorSystemProvider).getActorSystem();
-
-        doReturn(MoreExecutors.newDirectExecutorService()).when(mockThreadPool).getExecutor();
-
         final var resources =  resourceManager.getSchemaResources(TEST_DEFAULT_SUBDIR, "test");
         resources.getSchemaRegistry().registerSchemaSource(
-            id -> Futures.immediateFuture(YangTextSchemaSource.delegateForByteSource(id,
-                    topModuleInfo.getYangTextByteSource())),
+            id -> Futures.immediateFuture(YangTextSchemaSource.delegateForCharSource(id,
+                    topModuleInfo.getYangTextCharSource())),
             PotentialSchemaSource.create(new SourceIdentifier(TOP_MODULE_NAME,
                     topModuleInfo.getName().getRevision().map(Revision::toString).orElse(null)),
                 YangTextSchemaSource.class, 1));
 
         masterNetconfTopologyManager = new NetconfTopologyManager(BASE_SCHEMAS, masterDataBroker,
-                mockRpcProviderRegistry, mockActionProviderRegistry, masterClusterSingletonServiceProvider,
-                mockKeepaliveExecutor, mockThreadPool, mockMasterActorSystemProvider, eventExecutor,
-                mockClientDispatcher, TOPOLOGY_ID, config, masterMountPointService, mockEncryptionService,
-                mockRpcProviderService, deviceActionFactory, resourceManager) {
+                masterClusterSingletonServiceProvider, mockKeepaliveExecutor, MoreExecutors.directExecutor(),
+                masterSystem, eventExecutor, mockClientDispatcher, masterMountPointService,
+                mockEncryptionService, mockRpcProviderService, deviceActionFactory, resourceManager, builderFactory,
+                TOPOLOGY_ID, Uint16.ZERO) {
             @Override
             protected NetconfTopologyContext newNetconfTopologyContext(final NetconfTopologySetup setup,
                     final ServiceGroupIdentifier serviceGroupIdent, final Timeout actorResponseWaitTime,
                     final DeviceActionFactory deviceActionFact) {
                 final var context = super.newNetconfTopologyContext(setup, serviceGroupIdent, actorResponseWaitTime,
                     deviceActionFact);
-
                 final var spiedContext = spy(context);
+                final var spiedSingleton = spy(context.getTopologySingleton());
                 doAnswer(invocation -> {
                     final var spiedFacade = (MasterSalFacade) spy(invocation.callRealMethod());
                     doReturn(deviceDOMDataBroker).when(spiedFacade)
                         .newDeviceDataBroker(any(MountPointContext.class), any(NetconfSessionPreferences.class));
                     masterSalFacadeFuture.set(spiedFacade);
                     return spiedFacade;
-                }).when(spiedContext).newMasterSalFacade();
-
+                }).when(spiedSingleton).createSalFacade(any(boolean.class));
+                doReturn(spiedSingleton).when(spiedContext).getTopologySingleton();
                 return spiedContext;
             }
         };
-
-        masterNetconfTopologyManager.init();
 
         verifyTopologyNodesCreated(masterDataBroker);
     }
@@ -348,16 +336,14 @@ public class MountPointEndToEndTest extends AbstractBaseSchemasTest {
 
         slaveSystem = ActorSystem.create(ACTOR_SYSTEM_NAME, ConfigFactory.load().getConfig("Slave"));
 
-        doReturn(slaveSystem).when(mockSlaveActorSystemProvider).getActorSystem();
-
         doReturn(mockSlaveClusterSingletonServiceReg).when(mockSlaveClusterSingletonServiceProvider)
                 .registerClusterSingletonService(any());
 
-        slaveNetconfTopologyManager = new NetconfTopologyManager(BASE_SCHEMAS, slaveDataBroker, mockRpcProviderRegistry,
-            mockActionProviderRegistry, mockSlaveClusterSingletonServiceProvider, mockKeepaliveExecutor, mockThreadPool,
-                mockSlaveActorSystemProvider, eventExecutor, mockClientDispatcher, TOPOLOGY_ID, config,
-                slaveMountPointService, mockEncryptionService, mockRpcProviderService, deviceActionFactory,
-                resourceManager) {
+        slaveNetconfTopologyManager = new NetconfTopologyManager(BASE_SCHEMAS, slaveDataBroker,
+                mockSlaveClusterSingletonServiceProvider, mockKeepaliveExecutor, MoreExecutors.directExecutor(),
+                slaveSystem, eventExecutor, mockClientDispatcher, slaveMountPointService,
+                mockEncryptionService, mockRpcProviderService, deviceActionFactory, resourceManager, builderFactory,
+                TOPOLOGY_ID, Uint16.ZERO) {
             @Override
             protected NetconfTopologyContext newNetconfTopologyContext(final NetconfTopologySetup setup,
                 final ServiceGroupIdentifier serviceGroupIdent, final Timeout actorResponseWaitTime,
@@ -369,8 +355,6 @@ public class MountPointEndToEndTest extends AbstractBaseSchemasTest {
                 return spiedContext;
             }
         };
-
-        slaveNetconfTopologyManager.init();
 
         verifyTopologyNodesCreated(slaveDataBroker);
 
@@ -407,9 +391,8 @@ public class MountPointEndToEndTest extends AbstractBaseSchemasTest {
 
         final var masterSalFacade = masterSalFacadeFuture.get(5, TimeUnit.SECONDS);
         masterSalFacade.onDeviceConnected(new NetconfDeviceSchema(NetconfDeviceCapabilities.empty(),
-            new EmptyMountPointContext(deviceSchemaContext)),
-            NetconfSessionPreferences.fromStrings(
-                List.of(NetconfMessageTransformUtil.NETCONF_CANDIDATE_URI.toString())),
+            MountPointContext.of(deviceSchemaContext)),
+            NetconfSessionPreferences.fromStrings(List.of(CapabilityURN.CANDIDATE)),
             new RemoteDeviceServices(deviceRpcService, null));
 
         final var masterMountPoint = awaitMountPoint(masterMountPointService);
@@ -458,10 +441,6 @@ public class MountPointEndToEndTest extends AbstractBaseSchemasTest {
 
         DOMMountPoint slaveMountPoint = awaitMountPoint(slaveMountPointService);
 
-        final NetconfTopologyContext slaveNetconfTopologyContext =
-                slaveNetconfTopologyContextFuture.get(5, TimeUnit.SECONDS);
-        verify(slaveNetconfTopologyContext, never()).newMasterSalFacade();
-
         LOG.info("****** Testing slave DOMDataBroker operations");
 
         testDOMDataBrokerOperations(getDOMDataBroker(slaveMountPoint));
@@ -483,10 +462,10 @@ public class MountPointEndToEndTest extends AbstractBaseSchemasTest {
         verify(masterMountPointListener, timeout(5000)).onMountPointRemoved(yangNodeInstanceId);
 
         final var masterSalFacade = masterSalFacadeFuture.get(5, TimeUnit.SECONDS);
-        masterSalFacade.onDeviceConnected(new NetconfDeviceSchema(NetconfDeviceCapabilities.empty(),
-            new EmptyMountPointContext(deviceSchemaContext)), NetconfSessionPreferences.fromStrings(List.of(
-                    NetconfMessageTransformUtil.NETCONF_CANDIDATE_URI.toString())),
-                new RemoteDeviceServices(deviceRpcService, null));
+        masterSalFacade.onDeviceConnected(
+            new NetconfDeviceSchema(NetconfDeviceCapabilities.empty(), MountPointContext.of(deviceSchemaContext)),
+            NetconfSessionPreferences.fromStrings(List.of(CapabilityURN.CANDIDATE)),
+            new RemoteDeviceServices(deviceRpcService, null));
 
         verify(masterMountPointListener, timeout(5000)).onMountPointCreated(yangNodeInstanceId);
 
@@ -685,10 +664,11 @@ public class MountPointEndToEndTest extends AbstractBaseSchemasTest {
         final var dataBrokerTest = new AbstractConcurrentDataBrokerTest(true) {
             @Override
             protected Set<YangModuleInfo> getModuleInfos() {
-                return Set.of(BindingReflections.getModuleInfo(NetconfNode.class),
-                        BindingReflections.getModuleInfo(NetworkTopology.class),
-                        BindingReflections.getModuleInfo(Keystore.class),
-                        topModuleInfo);
+                return Set.of(
+                    BindingRuntimeHelpers.getYangModuleInfo(NetconfNode.class),
+                    BindingRuntimeHelpers.getYangModuleInfo(NetworkTopology.class),
+                    BindingRuntimeHelpers.getYangModuleInfo(Keystore.class),
+                    topModuleInfo);
             }
         };
 

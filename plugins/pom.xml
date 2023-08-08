@@ -13,13 +13,13 @@
     <parent>
         <groupId>org.opendaylight.odlparent</groupId>
         <artifactId>odlparent-lite</artifactId>
-        <version>12.0.5</version>
+        <version>13.0.3</version>
         <relativePath/>
     </parent>
 
     <groupId>org.opendaylight.netconf</groupId>
     <artifactId>plugins</artifactId>
-    <version>6.0.0-SNAPSHOT</version>
+    <version>7.0.0-SNAPSHOT</version>
     <packaging>pom</packaging>
     <name>${project.artifactId}</name>
 
@@ -29,7 +29,10 @@
     </properties>
 
     <modules>
+        <module>netconf-auth-aaa</module>
+        <module>netconf-client-mdsal</module>
+        <module>netconf-common-mdsal</module>
         <module>netconf-dom-api</module>
-        <module>sal-netconf-connector</module>
+        <module>netconf-server-mdsal</module>
     </modules>
 </project>

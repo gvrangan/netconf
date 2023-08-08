@@ -7,7 +7,6 @@
  */
 package org.opendaylight.netconf.topology.singleton.impl;
 
-import static java.nio.charset.StandardCharsets.UTF_8;
 import static org.hamcrest.CoreMatchers.containsString;
 import static org.hamcrest.CoreMatchers.instanceOf;
 import static org.hamcrest.CoreMatchers.startsWith;
@@ -44,19 +43,17 @@ import akka.testkit.TestActorRef;
 import akka.testkit.javadsl.TestKit;
 import akka.util.Timeout;
 import com.google.common.collect.ImmutableList;
-import com.google.common.io.ByteSource;
+import com.google.common.io.CharSource;
 import com.google.common.net.InetAddresses;
 import com.google.common.util.concurrent.FluentFuture;
 import com.google.common.util.concurrent.Futures;
 import com.google.common.util.concurrent.ListenableFuture;
 import com.google.common.util.concurrent.SettableFuture;
-import java.io.InputStream;
 import java.net.InetSocketAddress;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
-import java.util.Scanner;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import org.junit.After;
@@ -85,12 +82,12 @@ import org.opendaylight.mdsal.dom.api.DOMRpcService;
 import org.opendaylight.mdsal.dom.api.DOMSchemaService;
 import org.opendaylight.mdsal.dom.spi.DefaultDOMRpcResult;
 import org.opendaylight.mdsal.dom.spi.SimpleDOMActionResult;
+import org.opendaylight.netconf.client.mdsal.NetconfDevice.SchemaResourcesDTO;
+import org.opendaylight.netconf.client.mdsal.api.RemoteDeviceId;
+import org.opendaylight.netconf.client.mdsal.api.RemoteDeviceServices;
+import org.opendaylight.netconf.client.mdsal.api.RemoteDeviceServices.Actions;
+import org.opendaylight.netconf.client.mdsal.api.RemoteDeviceServices.Rpcs;
 import org.opendaylight.netconf.dom.api.NetconfDataTreeService;
-import org.opendaylight.netconf.sal.connect.api.RemoteDeviceId;
-import org.opendaylight.netconf.sal.connect.api.RemoteDeviceServices;
-import org.opendaylight.netconf.sal.connect.api.RemoteDeviceServices.Actions;
-import org.opendaylight.netconf.sal.connect.api.RemoteDeviceServices.Rpcs;
-import org.opendaylight.netconf.sal.connect.netconf.NetconfDevice.SchemaResourcesDTO;
 import org.opendaylight.netconf.topology.singleton.impl.actors.NetconfNodeActor;
 import org.opendaylight.netconf.topology.singleton.impl.utils.ClusteringActionException;
 import org.opendaylight.netconf.topology.singleton.impl.utils.ClusteringRpcException;
@@ -147,43 +144,30 @@ public class NetconfNodeActorTest extends AbstractBaseSchemasTest {
 
     @Mock
     private Rpcs.Normalized mockDOMRpcService;
-
     @Mock
     private Actions.Normalized mockDOMActionService;
-
     @Mock
     private DOMMountPointService mockMountPointService;
-
     @Mock
     private DOMMountPointService.DOMMountPointBuilder mockMountPointBuilder;
-
     @Mock
     private ObjectRegistration<DOMMountPoint> mockMountPointReg;
-
     @Mock
     private DOMDataBroker mockDOMDataBroker;
-
     @Mock
     private NetconfDataTreeService netconfService;
-
     @Mock
     private SchemaSourceRegistration<?> mockSchemaSourceReg1;
-
     @Mock
     private SchemaSourceRegistration<?> mockSchemaSourceReg2;
-
     @Mock
     private SchemaSourceRegistry mockRegistry;
-
     @Mock
     private EffectiveModelContextFactory mockSchemaContextFactory;
-
     @Mock
     private SchemaRepository mockSchemaRepository;
-
     @Mock
     private EffectiveModelContext mockSchemaContext;
-
     @Mock
     private SchemaResourcesDTO schemaResourceDTO;
 
@@ -197,9 +181,12 @@ public class NetconfNodeActorTest extends AbstractBaseSchemasTest {
 
         doReturn(masterSchemaRepository).when(schemaResourceDTO).getSchemaRepository();
         doReturn(mockRegistry).when(schemaResourceDTO).getSchemaRegistry();
-        final NetconfTopologySetup setup = NetconfTopologySetupBuilder.create().setActorSystem(system)
-                .setIdleTimeout(Duration.ofSeconds(1)).setSchemaResourceDTO(schemaResourceDTO)
-                .setBaseSchemas(BASE_SCHEMAS).build();
+        final NetconfTopologySetup setup = NetconfTopologySetupBuilder.create()
+            .setActorSystem(system)
+            .setIdleTimeout(Duration.ofSeconds(1))
+            .setSchemaResourceDTO(schemaResourceDTO)
+            .setBaseSchemas(BASE_SCHEMAS)
+            .build();
 
         final Props props = NetconfNodeActor.props(setup, remoteDeviceId, TIMEOUT, mockMountPointService);
 
@@ -234,8 +221,11 @@ public class NetconfNodeActorTest extends AbstractBaseSchemasTest {
         final RemoteDeviceId newRemoteDeviceId = new RemoteDeviceId("netconf-topology2",
                 new InetSocketAddress(InetAddresses.forString("127.0.0.2"), 9999));
 
-        final NetconfTopologySetup newSetup = NetconfTopologySetupBuilder.create().setBaseSchemas(BASE_SCHEMAS)
-                .setSchemaResourceDTO(schemaResourceDTO).setActorSystem(system).build();
+        final NetconfTopologySetup newSetup = NetconfTopologySetupBuilder.create()
+            .setBaseSchemas(BASE_SCHEMAS)
+            .setSchemaResourceDTO(schemaResourceDTO)
+            .setActorSystem(system)
+            .build();
 
         masterRef.tell(new RefreshSetupMasterActorData(newSetup, newRemoteDeviceId), testKit.getRef());
 
@@ -424,9 +414,12 @@ public class NetconfNodeActorTest extends AbstractBaseSchemasTest {
         SchemaResourcesDTO schemaResourceDTO2 = mock(SchemaResourcesDTO.class);
         doReturn(repository).when(schemaResourceDTO2).getSchemaRegistry();
         doReturn(repository).when(schemaResourceDTO2).getSchemaRepository();
-        final NetconfTopologySetup setup = NetconfTopologySetupBuilder.create().setActorSystem(system)
-                .setSchemaResourceDTO(schemaResourceDTO2).setIdleTimeout(Duration.ofSeconds(1))
-                .setBaseSchemas(BASE_SCHEMAS).build();
+        final NetconfTopologySetup setup = NetconfTopologySetupBuilder.create()
+            .setActorSystem(system)
+            .setSchemaResourceDTO(schemaResourceDTO2)
+            .setIdleTimeout(Duration.ofSeconds(1))
+            .setBaseSchemas(BASE_SCHEMAS)
+            .build();
         final Props props = NetconfNodeActor.props(setup, remoteDeviceId, TIMEOUT, mockMountPointService);
         ActorRef actor = TestActorRef.create(system, props, "master_messages_2");
 
@@ -447,8 +440,8 @@ public class NetconfNodeActorTest extends AbstractBaseSchemasTest {
         final ProxyYangTextSourceProvider proxyYangProvider =
                 new ProxyYangTextSourceProvider(masterRef, system.dispatcher(), TIMEOUT);
 
-        final YangTextSchemaSource yangTextSchemaSource = YangTextSchemaSource.delegateForByteSource(sourceIdentifier,
-                ByteSource.wrap("YANG".getBytes(UTF_8)));
+        final YangTextSchemaSource yangTextSchemaSource = YangTextSchemaSource.delegateForCharSource(sourceIdentifier,
+                CharSource.wrap("YANG"));
 
         // Test success.
 
@@ -462,7 +455,7 @@ public class NetconfNodeActorTest extends AbstractBaseSchemasTest {
         final YangTextSchemaSourceSerializationProxy success = Await.result(resolvedSchemaFuture, TIMEOUT.duration());
 
         assertEquals(sourceIdentifier, success.getRepresentation().getIdentifier());
-        assertEquals("YANG", convertStreamToString(success.getRepresentation().openStream()));
+        assertEquals("YANG", success.getRepresentation().read());
 
         // Test missing source failure.
 
@@ -560,7 +553,7 @@ public class NetconfNodeActorTest extends AbstractBaseSchemasTest {
         final QName testQName = QName.create("test", "2019-08-16", "TestActionQname");
         final Absolute schemaPath = Absolute.of(testQName);
 
-        final YangInstanceIdentifier yangIIdPath = YangInstanceIdentifier.create(new NodeIdentifier(testQName));
+        final YangInstanceIdentifier yangIIdPath = YangInstanceIdentifier.of(testQName);
 
         final DOMDataTreeIdentifier domDataTreeIdentifier = new DOMDataTreeIdentifier(LogicalDatastoreType.OPERATIONAL,
             yangIIdPath);
@@ -633,7 +626,7 @@ public class NetconfNodeActorTest extends AbstractBaseSchemasTest {
         final NetconfDataTreeService slaveNetconfService = netconfCaptor.getValue();
         assertTrue(slaveNetconfService instanceof ProxyNetconfDataTreeService);
 
-        final YangInstanceIdentifier PATH = YangInstanceIdentifier.empty();
+        final YangInstanceIdentifier PATH = YangInstanceIdentifier.of();
         final LogicalDatastoreType STORE = LogicalDatastoreType.CONFIGURATION;
         final ContainerNode NODE = Builders.containerBuilder()
             .withNodeIdentifier(new NodeIdentifier(QName.create("", "cont")))
@@ -671,9 +664,11 @@ public class NetconfNodeActorTest extends AbstractBaseSchemasTest {
         SchemaResourcesDTO schemaResourceDTO2 = mock(SchemaResourcesDTO.class);
         doReturn(mockRegistry).when(schemaResourceDTO2).getSchemaRegistry();
         doReturn(mockSchemaRepository).when(schemaResourceDTO2).getSchemaRepository();
-        final ActorRef slaveRef = system.actorOf(NetconfNodeActor.props(
-                NetconfTopologySetupBuilder.create().setSchemaResourceDTO(schemaResourceDTO2).setActorSystem(system)
-                .setBaseSchemas(BASE_SCHEMAS).build(), remoteDeviceId, TIMEOUT, mockMountPointService));
+        final ActorRef slaveRef = system.actorOf(NetconfNodeActor.props(NetconfTopologySetupBuilder.create()
+                .setSchemaResourceDTO(schemaResourceDTO2)
+                .setActorSystem(system)
+                .setBaseSchemas(BASE_SCHEMAS)
+                .build(), remoteDeviceId, TIMEOUT, mockMountPointService));
 
         doReturn(Futures.immediateFuture(mockSchemaContext))
                 .when(mockSchemaContextFactory).createEffectiveModelContext(anyCollection());
@@ -709,11 +704,5 @@ public class NetconfNodeActorTest extends AbstractBaseSchemasTest {
 
     private static PotentialSchemaSource<?> withSourceId(final SourceIdentifier identifier) {
         return argThat(argument -> identifier.equals(argument.getSourceIdentifier()));
-    }
-
-    private static String convertStreamToString(final InputStream is) {
-        try (Scanner scanner = new Scanner(is)) {
-            return scanner.useDelimiter("\\A").hasNext() ? scanner.next() : "";
-        }
     }
 }

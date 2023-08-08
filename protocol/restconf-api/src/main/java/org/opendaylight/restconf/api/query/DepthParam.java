@@ -9,14 +9,13 @@ package org.opendaylight.restconf.api.query;
 
 import static com.google.common.base.Preconditions.checkArgument;
 
-import com.google.common.annotations.Beta;
 import java.net.URI;
 import org.eclipse.jdt.annotation.NonNull;
 import org.eclipse.jdt.annotation.Nullable;
 
 /**
  * This class represents a {@code depth} parameter as defined in
- * <a href="https://datatracker.ietf.org/doc/html/rfc8040#section-4.8.2">RFC8040 section 4.8.2</a>.
+ * <a href="https://www.rfc-editor.org/rfc/rfc8040#section-4.8.2">RFC8040 section 4.8.2</a>.
  */
 public final class DepthParam implements RestconfQueryParam<DepthParam> {
     // API consistency: must not be confused with enum constants
@@ -53,12 +52,10 @@ public final class DepthParam implements RestconfQueryParam<DepthParam> {
         return String.valueOf(value);
     }
 
-    @Beta
     public static @NonNull DepthParam min() {
         return MIN;
     }
 
-    @Beta
     public static @NonNull DepthParam max() {
         return MAX;
     }

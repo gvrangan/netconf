@@ -25,11 +25,11 @@ import static org.opendaylight.yangtools.util.concurrent.FluentFutures.immediate
 import static org.opendaylight.yangtools.util.concurrent.FluentFutures.immediateFluentFuture;
 import static org.opendaylight.yangtools.util.concurrent.FluentFutures.immediateTrueFluentFuture;
 
-import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
+import javax.ws.rs.container.AsyncResponse;
 import javax.ws.rs.core.MultivaluedHashMap;
 import javax.ws.rs.core.MultivaluedMap;
 import javax.ws.rs.core.Response;
@@ -38,6 +38,7 @@ import javax.ws.rs.core.UriInfo;
 import org.junit.Before;
 import org.junit.Test;
 import org.junit.runner.RunWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.MockitoJUnitRunner;
 import org.opendaylight.mdsal.common.api.CommitInfo;
@@ -58,7 +59,7 @@ import org.opendaylight.restconf.common.errors.RestconfDocumentedException;
 import org.opendaylight.restconf.common.patch.PatchContext;
 import org.opendaylight.restconf.common.patch.PatchEntity;
 import org.opendaylight.restconf.common.patch.PatchStatusContext;
-import org.opendaylight.restconf.nb.rfc8040.TestRestconfUtils;
+import org.opendaylight.restconf.nb.rfc8040.AbstractJukeboxTest;
 import org.opendaylight.restconf.nb.rfc8040.databind.DatabindContext;
 import org.opendaylight.restconf.nb.rfc8040.legacy.NormalizedNodePayload;
 import org.opendaylight.restconf.nb.rfc8040.rests.services.api.RestconfStreamsSubscriptionService;
@@ -68,36 +69,24 @@ import org.opendaylight.restconf.nb.rfc8040.rests.transactions.RestconfStrategy;
 import org.opendaylight.restconf.nb.rfc8040.streams.StreamsConfiguration;
 import org.opendaylight.yangtools.yang.common.ErrorTag;
 import org.opendaylight.yangtools.yang.common.ErrorType;
-import org.opendaylight.yangtools.yang.common.QName;
 import org.opendaylight.yangtools.yang.data.api.YangInstanceIdentifier;
 import org.opendaylight.yangtools.yang.data.api.YangInstanceIdentifier.NodeIdentifier;
 import org.opendaylight.yangtools.yang.data.api.YangInstanceIdentifier.NodeIdentifierWithPredicates;
 import org.opendaylight.yangtools.yang.data.api.schema.ContainerNode;
 import org.opendaylight.yangtools.yang.data.api.schema.DataContainerChild;
-import org.opendaylight.yangtools.yang.data.api.schema.LeafNode;
-import org.opendaylight.yangtools.yang.data.api.schema.MapEntryNode;
 import org.opendaylight.yangtools.yang.data.api.schema.MapNode;
 import org.opendaylight.yangtools.yang.data.api.schema.NormalizedNode;
 import org.opendaylight.yangtools.yang.data.impl.schema.Builders;
 import org.opendaylight.yangtools.yang.data.impl.schema.ImmutableNodes;
-import org.opendaylight.yangtools.yang.model.api.EffectiveModelContext;
 import org.opendaylight.yangtools.yang.model.api.SchemaContext;
-import org.opendaylight.yangtools.yang.test.util.YangParserTestUtils;
 
 @RunWith(MockitoJUnitRunner.StrictStubs.class)
-public class RestconfDataServiceImplTest {
-
-    private static final String PATH_FOR_NEW_SCHEMA_CONTEXT = "/jukebox";
-
+public class RestconfDataServiceImplTest extends AbstractJukeboxTest {
     private ContainerNode buildBaseCont;
     private ContainerNode buildBaseContConfig;
     private ContainerNode buildBaseContOperational;
-    private EffectiveModelContext contextRef;
     private YangInstanceIdentifier iidBase;
     private RestconfDataServiceImpl dataService;
-    private QName baseQName;
-    private QName containerPlayerQname;
-    private QName leafQname;
     private ContainerNode buildPlayerCont;
     private ContainerNode buildLibraryCont;
     private MapNode buildPlaylistList;
@@ -126,61 +115,47 @@ public class RestconfDataServiceImplTest {
     private RestconfStreamsSubscriptionService delegRestconfSubscrService;
     @Mock
     private MultivaluedMap<String, String> queryParamenters;
+    @Mock
+    private AsyncResponse asyncResponse;
 
     @Before
     public void setUp() throws Exception {
         doReturn(Set.of()).when(queryParamenters).entrySet();
         doReturn(queryParamenters).when(uriInfo).getQueryParameters();
 
-        baseQName = QName.create("http://example.com/ns/example-jukebox", "2015-04-04", "jukebox");
-        containerPlayerQname = QName.create(baseQName, "player");
-        leafQname = QName.create(baseQName, "gap");
-
-        final QName containerLibraryQName = QName.create(baseQName, "library");
-        final QName listPlaylistQName = QName.create(baseQName, "playlist");
-
-        final LeafNode<?> buildLeaf = Builders.leafBuilder()
-                .withNodeIdentifier(new NodeIdentifier(leafQname))
-                .withValue(0.2)
-                .build();
-
         buildPlayerCont = Builders.containerBuilder()
-                .withNodeIdentifier(new NodeIdentifier(containerPlayerQname))
-                .withChild(buildLeaf)
+                .withNodeIdentifier(new NodeIdentifier(PLAYER_QNAME))
+                .withChild(GAP_LEAF)
                 .build();
 
         buildLibraryCont = Builders.containerBuilder()
-                .withNodeIdentifier(new NodeIdentifier(containerLibraryQName))
+                .withNodeIdentifier(new NodeIdentifier(LIBRARY_QNAME))
                 .build();
 
         buildPlaylistList = Builders.mapBuilder()
-                .withNodeIdentifier(new NodeIdentifier(listPlaylistQName))
+                .withNodeIdentifier(new NodeIdentifier(PLAYLIST_QNAME))
                 .build();
 
         buildBaseCont = Builders.containerBuilder()
-                .withNodeIdentifier(new NodeIdentifier(baseQName))
+                .withNodeIdentifier(new NodeIdentifier(JUKEBOX_QNAME))
                 .withChild(buildPlayerCont)
                 .build();
 
         // config contains one child the same as in operational and one additional
         buildBaseContConfig = Builders.containerBuilder()
-                .withNodeIdentifier(new NodeIdentifier(baseQName))
+                .withNodeIdentifier(new NodeIdentifier(JUKEBOX_QNAME))
                 .withChild(buildPlayerCont)
                 .withChild(buildLibraryCont)
                 .build();
 
         // operational contains one child the same as in config and one additional
         buildBaseContOperational = Builders.containerBuilder()
-                .withNodeIdentifier(new NodeIdentifier(baseQName))
+                .withNodeIdentifier(new NodeIdentifier(JUKEBOX_QNAME))
                 .withChild(buildPlayerCont)
                 .withChild(buildPlaylistList)
                 .build();
 
-        iidBase = YangInstanceIdentifier.builder()
-                .node(baseQName)
-                .build();
-
-        contextRef = YangParserTestUtils.parseYangFiles(TestRestconfUtils.loadFiles(PATH_FOR_NEW_SCHEMA_CONTEXT));
+        iidBase = YangInstanceIdentifier.of(JUKEBOX_QNAME);
 
         doReturn(CommitInfo.emptyFluentFuture()).when(readWrite).commit();
 
@@ -188,11 +163,11 @@ public class RestconfDataServiceImplTest {
         doReturn(read).when(mockDataBroker).newReadOnlyTransaction();
         doReturn(readWrite).when(mockDataBroker).newReadWriteTransaction();
 
-        dataService = new RestconfDataServiceImpl(() -> DatabindContext.ofModel(contextRef), mockDataBroker,
+        dataService = new RestconfDataServiceImpl(() -> DatabindContext.ofModel(JUKEBOX_SCHEMA), mockDataBroker,
                 mountPointService, delegRestconfSubscrService, actionService, new StreamsConfiguration(0, 1, 0, false));
         doReturn(Optional.of(mountPoint)).when(mountPointService)
                 .getMountPoint(any(YangInstanceIdentifier.class));
-        doReturn(Optional.of(FixedDOMSchemaService.of(contextRef))).when(mountPoint)
+        doReturn(Optional.of(FixedDOMSchemaService.of(JUKEBOX_SCHEMA))).when(mountPoint)
                 .getService(DOMSchemaService.class);
         doReturn(Optional.of(mountDataBroker)).when(mountPoint).getService(DOMDataBroker.class);
         doReturn(Optional.empty()).when(mountPoint).getService(NetconfDataTreeService.class);
@@ -202,7 +177,7 @@ public class RestconfDataServiceImplTest {
 
     @Test
     public void testReadData() {
-        doReturn(new MultivaluedHashMap<String, String>()).when(uriInfo).getQueryParameters();
+        doReturn(new MultivaluedHashMap<>()).when(uriInfo).getQueryParameters();
         doReturn(immediateFluentFuture(Optional.of(buildBaseCont))).when(read)
                 .read(LogicalDatastoreType.CONFIGURATION, iidBase);
         doReturn(immediateFluentFuture(Optional.empty()))
@@ -215,13 +190,13 @@ public class RestconfDataServiceImplTest {
 
     @Test
     public void testReadRootData() {
-        doReturn(new MultivaluedHashMap<String, String>()).when(uriInfo).getQueryParameters();
+        doReturn(new MultivaluedHashMap<>()).when(uriInfo).getQueryParameters();
         doReturn(immediateFluentFuture(Optional.of(wrapNodeByDataRootContainer(buildBaseContConfig))))
                 .when(read)
-                .read(LogicalDatastoreType.CONFIGURATION, YangInstanceIdentifier.empty());
+                .read(LogicalDatastoreType.CONFIGURATION, YangInstanceIdentifier.of());
         doReturn(immediateFluentFuture(Optional.of(wrapNodeByDataRootContainer(buildBaseContOperational))))
                 .when(read)
-                .read(LogicalDatastoreType.OPERATIONAL, YangInstanceIdentifier.empty());
+                .read(LogicalDatastoreType.OPERATIONAL, YangInstanceIdentifier.of());
         final Response response = dataService.readData(uriInfo);
         assertNotNull(response);
         assertEquals(200, response.getStatus());
@@ -247,7 +222,7 @@ public class RestconfDataServiceImplTest {
      */
     @Test
     public void testReadDataMountPoint() {
-        doReturn(new MultivaluedHashMap<String, String>()).when(uriInfo).getQueryParameters();
+        doReturn(new MultivaluedHashMap<>()).when(uriInfo).getQueryParameters();
         doReturn(immediateFluentFuture(Optional.of(buildBaseContConfig))).when(read)
                 .read(LogicalDatastoreType.CONFIGURATION, iidBase);
         doReturn(immediateFluentFuture(Optional.of(buildBaseContOperational))).when(read)
@@ -263,14 +238,14 @@ public class RestconfDataServiceImplTest {
         final NormalizedNode data = ((NormalizedNodePayload) response.getEntity()).getData();
         assertTrue(data instanceof ContainerNode);
         assertEquals(3, ((ContainerNode) data).size());
-        assertTrue(((ContainerNode) data).findChildByArg(buildPlayerCont.getIdentifier()).isPresent());
-        assertTrue(((ContainerNode) data).findChildByArg(buildLibraryCont.getIdentifier()).isPresent());
-        assertTrue(((ContainerNode) data).findChildByArg(buildPlaylistList.getIdentifier()).isPresent());
+        assertNotNull(((ContainerNode) data).childByArg(buildPlayerCont.name()));
+        assertNotNull(((ContainerNode) data).childByArg(buildLibraryCont.name()));
+        assertNotNull(((ContainerNode) data).childByArg(buildPlaylistList.name()));
     }
 
     @Test
     public void testReadDataNoData() {
-        doReturn(new MultivaluedHashMap<String, String>()).when(uriInfo).getQueryParameters();
+        doReturn(new MultivaluedHashMap<>()).when(uriInfo).getQueryParameters();
         doReturn(immediateFluentFuture(Optional.empty()))
                 .when(read).read(LogicalDatastoreType.CONFIGURATION, iidBase);
         doReturn(immediateFluentFuture(Optional.empty()))
@@ -307,11 +282,11 @@ public class RestconfDataServiceImplTest {
         final NormalizedNode data = ((NormalizedNodePayload) response.getEntity()).getData();
 
         // config data present
-        assertTrue(((ContainerNode) data).findChildByArg(buildPlayerCont.getIdentifier()).isPresent());
-        assertTrue(((ContainerNode) data).findChildByArg(buildLibraryCont.getIdentifier()).isPresent());
+        assertNotNull(((ContainerNode) data).childByArg(buildPlayerCont.name()));
+        assertNotNull(((ContainerNode) data).childByArg(buildLibraryCont.name()));
 
         // state data absent
-        assertFalse(((ContainerNode) data).findChildByArg(buildPlaylistList.getIdentifier()).isPresent());
+        assertNull(((ContainerNode) data).childByArg(buildPlaylistList.name()));
     }
 
     /**
@@ -335,16 +310,16 @@ public class RestconfDataServiceImplTest {
         final NormalizedNode data = ((NormalizedNodePayload) response.getEntity()).getData();
 
         // state data present
-        assertTrue(((ContainerNode) data).findChildByArg(buildPlayerCont.getIdentifier()).isPresent());
-        assertTrue(((ContainerNode) data).findChildByArg(buildPlaylistList.getIdentifier()).isPresent());
+        assertNotNull(((ContainerNode) data).childByArg(buildPlayerCont.name()));
+        assertNotNull(((ContainerNode) data).childByArg(buildPlaylistList.name()));
 
         // config data absent
-        assertFalse(((ContainerNode) data).findChildByArg(buildLibraryCont.getIdentifier()).isPresent());
+        assertNull(((ContainerNode) data).childByArg(buildLibraryCont.name()));
     }
 
     @Test
     public void testPutData() {
-        final InstanceIdentifierContext iidContext = InstanceIdentifierContext.ofLocalPath(contextRef, iidBase);
+        final InstanceIdentifierContext iidContext = InstanceIdentifierContext.ofLocalPath(JUKEBOX_SCHEMA, iidBase);
         final NormalizedNodePayload payload = NormalizedNodePayload.of(iidContext, buildBaseCont);
 
         doReturn(immediateTrueFluentFuture()).when(read)
@@ -358,7 +333,7 @@ public class RestconfDataServiceImplTest {
     @Test
     public void testPutDataWithMountPoint() {
         final InstanceIdentifierContext iidContext =
-            InstanceIdentifierContext.ofMountPointPath(mountPoint, contextRef, iidBase);
+            InstanceIdentifierContext.ofMountPointPath(mountPoint, JUKEBOX_SCHEMA, iidBase);
         final NormalizedNodePayload payload = NormalizedNodePayload.of(iidContext, buildBaseCont);
 
         doReturn(immediateTrueFluentFuture()).when(read)
@@ -371,32 +346,23 @@ public class RestconfDataServiceImplTest {
 
     @Test
     public void testPostData() {
-        final QName listQname = QName.create(baseQName, "playlist");
-        final QName listKeyQname = QName.create(baseQName, "name");
-        final NodeIdentifierWithPredicates nodeWithKey =
-                NodeIdentifierWithPredicates.of(listQname, listKeyQname, "name of band");
+        final var identifier = NodeIdentifierWithPredicates.of(PLAYLIST_QNAME, NAME_QNAME, "name of band");
+        final var entryNode = Builders.mapEntryBuilder()
+            .withNodeIdentifier(identifier)
+            .withChild(ImmutableNodes.leafNode(NAME_QNAME, "name of band"))
+            .withChild(ImmutableNodes.leafNode(DESCRIPTION_QNAME, "band description"))
+            .build();
 
-        doReturn(new MultivaluedHashMap<String, String>()).when(uriInfo).getQueryParameters();
-        final InstanceIdentifierContext iidContext = InstanceIdentifierContext.ofLocalPath(contextRef, iidBase);
-        final NormalizedNodePayload payload = NormalizedNodePayload.of(iidContext, Builders.mapBuilder()
-            .withNodeIdentifier(new NodeIdentifier(listQname))
-            .withChild(Builders.mapEntryBuilder()
-                .withNodeIdentifier(nodeWithKey)
-                .withChild(ImmutableNodes.leafNode(QName.create(baseQName, "name"), "name of band"))
-                .withChild(ImmutableNodes.leafNode(QName.create(baseQName, "description"), "band description"))
-                .build())
-            .build());
-        final MapNode data = (MapNode) payload.getData();
-        final MapEntryNode entryNode = data.body().iterator().next();
-        final NodeIdentifierWithPredicates identifier = entryNode.getIdentifier();
-        final YangInstanceIdentifier node =
-                payload.getInstanceIdentifierContext().getInstanceIdentifier().node(identifier);
-        doReturn(immediateFalseFluentFuture())
-                .when(readWrite).exists(LogicalDatastoreType.CONFIGURATION, node);
+        doReturn(new MultivaluedHashMap<>()).when(uriInfo).getQueryParameters();
+        final var node = iidBase.node(identifier);
+        doReturn(immediateFalseFluentFuture()).when(readWrite).exists(LogicalDatastoreType.CONFIGURATION, node);
         doNothing().when(readWrite).put(LogicalDatastoreType.CONFIGURATION, node, entryNode);
         doReturn(UriBuilder.fromUri("http://localhost:8181/rests/")).when(uriInfo).getBaseUriBuilder();
 
-        final Response response = dataService.postData(null, payload, uriInfo);
+        final var response = dataService.postData(NormalizedNodePayload.of(
+            InstanceIdentifierContext.ofLocalPath(JUKEBOX_SCHEMA, iidBase),
+            Builders.mapBuilder().withNodeIdentifier(new NodeIdentifier(PLAYLIST_QNAME)).withChild(entryNode).build()),
+            uriInfo);
         assertEquals(201, response.getStatus());
     }
 
@@ -405,9 +371,26 @@ public class RestconfDataServiceImplTest {
         doNothing().when(readWrite).delete(LogicalDatastoreType.CONFIGURATION, iidBase);
         doReturn(immediateTrueFluentFuture())
                 .when(readWrite).exists(LogicalDatastoreType.CONFIGURATION, iidBase);
-        final Response response = dataService.deleteData("example-jukebox:jukebox");
-        assertNotNull(response);
-        assertEquals(Response.Status.NO_CONTENT.getStatusCode(), response.getStatus());
+        final var captor = ArgumentCaptor.forClass(Response.class);
+        doReturn(true).when(asyncResponse).resume(captor.capture());
+        dataService.deleteData("example-jukebox:jukebox", asyncResponse);
+
+        assertEquals(204, captor.getValue().getStatus());
+    }
+
+    @Test
+    public void testDeleteDataNotExisting() {
+        doReturn(immediateFalseFluentFuture())
+                .when(readWrite).exists(LogicalDatastoreType.CONFIGURATION, iidBase);
+        final var captor = ArgumentCaptor.forClass(RestconfDocumentedException.class);
+        doReturn(true).when(asyncResponse).resume(captor.capture());
+        dataService.deleteData("example-jukebox:jukebox", asyncResponse);
+
+        final var errors = captor.getValue().getErrors();
+        assertEquals(1, errors.size());
+        final var error = errors.get(0);
+        assertEquals(ErrorType.PROTOCOL, error.getErrorType());
+        assertEquals(ErrorTag.DATA_MISSING, error.getErrorTag());
     }
 
     /**
@@ -418,24 +401,24 @@ public class RestconfDataServiceImplTest {
         doNothing().when(readWrite).delete(LogicalDatastoreType.CONFIGURATION, iidBase);
         doReturn(immediateTrueFluentFuture())
                 .when(readWrite).exists(LogicalDatastoreType.CONFIGURATION, iidBase);
-        final Response response =
-                dataService.deleteData("example-jukebox:jukebox/yang-ext:mount/example-jukebox:jukebox");
-        assertNotNull(response);
-        assertEquals(Response.Status.NO_CONTENT.getStatusCode(), response.getStatus());
+        final var captor = ArgumentCaptor.forClass(Response.class);
+        doReturn(true).when(asyncResponse).resume(captor.capture());
+        dataService.deleteData("example-jukebox:jukebox/yang-ext:mount/example-jukebox:jukebox", asyncResponse);
+
+        assertEquals(204, captor.getValue().getStatus());
     }
 
     @Test
     public void testPatchData() {
-        final InstanceIdentifierContext iidContext = InstanceIdentifierContext.ofLocalPath(contextRef, iidBase);
-        final List<PatchEntity> entity = new ArrayList<>();
+        final InstanceIdentifierContext iidContext = InstanceIdentifierContext.ofLocalPath(JUKEBOX_SCHEMA, iidBase);
         final YangInstanceIdentifier iidleaf = YangInstanceIdentifier.builder(iidBase)
-                .node(containerPlayerQname)
-                .node(leafQname)
+                .node(PLAYER_QNAME)
+                .node(GAP_QNAME)
                 .build();
-        entity.add(new PatchEntity("create data", CREATE, iidBase, buildBaseCont));
-        entity.add(new PatchEntity("replace data", REPLACE, iidBase, buildBaseCont));
-        entity.add(new PatchEntity("delete data", DELETE, iidleaf));
-        final PatchContext patch = new PatchContext(iidContext, entity, "test patch id");
+        final PatchContext patch = new PatchContext(iidContext, List.of(
+            new PatchEntity("create data", CREATE, iidBase, buildBaseCont),
+            new PatchEntity("replace data", REPLACE, iidBase, buildBaseCont),
+            new PatchEntity("delete data", DELETE, iidleaf)), "test patch id");
 
         doNothing().when(readWrite).delete(LogicalDatastoreType.CONFIGURATION, iidleaf);
         doReturn(immediateFalseFluentFuture())
@@ -450,17 +433,16 @@ public class RestconfDataServiceImplTest {
 
     @Test
     public void testPatchDataMountPoint() throws Exception {
-        final InstanceIdentifierContext iidContext = InstanceIdentifierContext.ofMountPointPath(mountPoint, contextRef,
-                iidBase);
-        final List<PatchEntity> entity = new ArrayList<>();
+        final InstanceIdentifierContext iidContext = InstanceIdentifierContext.ofMountPointPath(mountPoint,
+            JUKEBOX_SCHEMA, iidBase);
         final YangInstanceIdentifier iidleaf = YangInstanceIdentifier.builder(iidBase)
-                .node(containerPlayerQname)
-                .node(leafQname)
+                .node(PLAYER_QNAME)
+                .node(GAP_QNAME)
                 .build();
-        entity.add(new PatchEntity("create data", CREATE, iidBase, buildBaseCont));
-        entity.add(new PatchEntity("replace data", REPLACE, iidBase, buildBaseCont));
-        entity.add(new PatchEntity("delete data", DELETE, iidleaf));
-        final PatchContext patch = new PatchContext(iidContext, entity, "test patch id");
+        final PatchContext patch = new PatchContext(iidContext, List.of(
+            new PatchEntity("create data", CREATE, iidBase, buildBaseCont),
+            new PatchEntity("replace data", REPLACE, iidBase, buildBaseCont),
+            new PatchEntity("delete data", DELETE, iidleaf)), "test patch id");
 
         doNothing().when(readWrite).delete(LogicalDatastoreType.CONFIGURATION, iidleaf);
         doReturn(immediateFalseFluentFuture())
@@ -475,16 +457,15 @@ public class RestconfDataServiceImplTest {
 
     @Test
     public void testPatchDataDeleteNotExist() {
-        final InstanceIdentifierContext iidContext = InstanceIdentifierContext.ofLocalPath(contextRef, iidBase);
-        final List<PatchEntity> entity = new ArrayList<>();
+        final InstanceIdentifierContext iidContext = InstanceIdentifierContext.ofLocalPath(JUKEBOX_SCHEMA, iidBase);
         final YangInstanceIdentifier iidleaf = YangInstanceIdentifier.builder(iidBase)
-                .node(containerPlayerQname)
-                .node(leafQname)
+                .node(PLAYER_QNAME)
+                .node(GAP_QNAME)
                 .build();
-        entity.add(new PatchEntity("create data", CREATE, iidBase, buildBaseCont));
-        entity.add(new PatchEntity("remove data", REMOVE, iidleaf));
-        entity.add(new PatchEntity("delete data", DELETE, iidleaf));
-        final PatchContext patch = new PatchContext(iidContext, entity, "test patch id");
+        final PatchContext patch = new PatchContext(iidContext, List.of(
+            new PatchEntity("create data", CREATE, iidBase, buildBaseCont),
+            new PatchEntity("remove data", REMOVE, iidleaf),
+            new PatchEntity("delete data", DELETE, iidleaf)), "test patch id");
 
         doNothing().when(readWrite).delete(LogicalDatastoreType.CONFIGURATION, iidleaf);
         doReturn(immediateFalseFluentFuture())
@@ -512,5 +493,50 @@ public class RestconfDataServiceImplTest {
         doReturn(Optional.of(netconfService)).when(mountPoint).getService(NetconfDataTreeService.class);
         restconfStrategy = dataService.getRestconfStrategy(mountPoint);
         assertTrue(restconfStrategy instanceof NetconfRestconfStrategy);
+    }
+
+    @Test
+    public void testValidInputData() {
+        RestconfDataServiceImpl.validInputData(true, NormalizedNodePayload.of(
+            InstanceIdentifierContext.ofLocalPath(JUKEBOX_SCHEMA, GAP_IID), GAP_LEAF));
+    }
+
+    @Test
+    public void testValidTopLevelNodeName() {
+        RestconfDataServiceImpl.validTopLevelNodeName(GAP_IID, NormalizedNodePayload.of(
+            InstanceIdentifierContext.ofLocalPath(JUKEBOX_SCHEMA, GAP_IID), GAP_LEAF));
+        RestconfDataServiceImpl.validTopLevelNodeName(JUKEBOX_IID, NormalizedNodePayload.of(
+            InstanceIdentifierContext.ofLocalPath(JUKEBOX_SCHEMA, JUKEBOX_IID), EMPTY_JUKEBOX));
+    }
+
+    @Test
+    public void testValidTopLevelNodeNamePathEmpty() {
+        final var iidContext = InstanceIdentifierContext.ofLocalPath(JUKEBOX_SCHEMA, GAP_IID);
+        final var payload = NormalizedNodePayload.of(iidContext, GAP_LEAF);
+
+        // FIXME: more asserts
+        assertThrows(RestconfDocumentedException.class,
+            () -> RestconfDataServiceImpl.validTopLevelNodeName(YangInstanceIdentifier.of(), payload));
+    }
+
+    @Test
+    public void testValidTopLevelNodeNameWrongTopIdentifier() {
+        final var iidContext = InstanceIdentifierContext.ofLocalPath(JUKEBOX_SCHEMA, GAP_IID);
+        final var payload = NormalizedNodePayload.of(iidContext, GAP_LEAF);
+
+        // FIXME: more asserts
+        assertThrows(RestconfDocumentedException.class,
+            () -> RestconfDataServiceImpl.validTopLevelNodeName(GAP_IID.getAncestor(1), payload));
+    }
+
+    @Test
+    public void testValidateListKeysEqualityInPayloadAndUri() {
+        final var iidContext = InstanceIdentifierContext.ofLocalPath(JUKEBOX_SCHEMA, YangInstanceIdentifier.builder()
+            .node(JUKEBOX_QNAME)
+            .node(PLAYLIST_QNAME)
+            .nodeWithKey(PLAYLIST_QNAME, NAME_QNAME, "name of band")
+            .build());
+        final NormalizedNodePayload payload = NormalizedNodePayload.of(iidContext, BAND_ENTRY);
+        RestconfDataServiceImpl.validateListKeysEqualityInPayloadAndUri(payload);
     }
 }

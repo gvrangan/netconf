@@ -9,11 +9,12 @@ package org.opendaylight.netconf.test.tool.customrpc;
 
 import java.io.File;
 import java.util.Set;
-import org.opendaylight.netconf.api.capability.Capability;
-import org.opendaylight.netconf.api.monitoring.CapabilityListener;
-import org.opendaylight.netconf.mapping.api.NetconfOperation;
-import org.opendaylight.netconf.mapping.api.NetconfOperationService;
-import org.opendaylight.netconf.mapping.api.NetconfOperationServiceFactory;
+import org.opendaylight.netconf.server.api.monitoring.Capability;
+import org.opendaylight.netconf.server.api.monitoring.CapabilityListener;
+import org.opendaylight.netconf.server.api.operations.NetconfOperation;
+import org.opendaylight.netconf.server.api.operations.NetconfOperationService;
+import org.opendaylight.netconf.server.api.operations.NetconfOperationServiceFactory;
+import org.opendaylight.yang.gen.v1.urn.ietf.params.xml.ns.netconf.base._1._0.rev110601.SessionIdType;
 import org.opendaylight.yangtools.concepts.Registration;
 
 public class SettableOperationProvider implements NetconfOperationServiceFactory {
@@ -34,7 +35,7 @@ public class SettableOperationProvider implements NetconfOperationServiceFactory
     }
 
     @Override
-    public NetconfOperationService createService(final String netconfSessionIdForReporting) {
+    public NetconfOperationService createService(final SessionIdType sessionId) {
         return new SettableOperationService(rpcConfig);
     }
 

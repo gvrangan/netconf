@@ -7,6 +7,8 @@
  */
 package org.opendaylight.netconf.nettyutil;
 
+import static java.util.Objects.requireNonNull;
+
 import io.netty.channel.Channel;
 import io.netty.channel.ChannelFuture;
 import io.netty.channel.ChannelHandler;
@@ -16,6 +18,7 @@ import io.netty.channel.SimpleChannelInboundHandler;
 import io.netty.handler.codec.ByteToMessageDecoder;
 import io.netty.handler.codec.MessageToByteEncoder;
 import java.io.EOFException;
+import org.eclipse.jdt.annotation.NonNull;
 import org.opendaylight.netconf.api.NetconfExiSession;
 import org.opendaylight.netconf.api.NetconfMessage;
 import org.opendaylight.netconf.api.NetconfSession;
@@ -28,6 +31,7 @@ import org.opendaylight.netconf.nettyutil.handler.NetconfMessageToEXIEncoder;
 import org.opendaylight.netconf.nettyutil.handler.exi.EXIParameters;
 import org.opendaylight.netconf.shaded.exificient.core.exceptions.EXIException;
 import org.opendaylight.netconf.shaded.exificient.core.exceptions.UnsupportedOption;
+import org.opendaylight.yang.gen.v1.urn.ietf.params.xml.ns.netconf.base._1._0.rev110601.SessionIdType;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -35,19 +39,18 @@ public abstract class AbstractNetconfSession<S extends NetconfSession, L extends
         extends SimpleChannelInboundHandler<Object> implements NetconfSession, NetconfExiSession {
     private static final Logger LOG = LoggerFactory.getLogger(AbstractNetconfSession.class);
 
-
     private final L sessionListener;
-    private final long sessionId;
+    private final @NonNull SessionIdType sessionId;
     private boolean up = false;
 
     private ChannelHandler delayedEncoder;
 
     private final Channel channel;
 
-    protected AbstractNetconfSession(final L sessionListener, final Channel channel, final long sessionId) {
+    protected AbstractNetconfSession(final L sessionListener, final Channel channel, final SessionIdType sessionId) {
         this.sessionListener = sessionListener;
         this.channel = channel;
-        this.sessionId = sessionId;
+        this.sessionId = requireNonNull(sessionId);
         LOG.debug("Session {} created", sessionId);
     }
 
@@ -63,6 +66,11 @@ public abstract class AbstractNetconfSession<S extends NetconfSession, L extends
     protected void handleMessage(final NetconfMessage netconfMessage) {
         LOG.debug("handling incoming message");
         sessionListener.onMessage(thisInstance(), netconfMessage);
+    }
+
+    protected void handleError(final Exception failure) {
+        LOG.debug("handling incoming error");
+        sessionListener.onError(thisInstance(), failure);
     }
 
     @Override
@@ -91,20 +99,20 @@ public abstract class AbstractNetconfSession<S extends NetconfSession, L extends
     protected void endOfInput() {
         LOG.debug("Session {} end of input detected while session was in state {}", this, up ? "up" : "initialized");
         if (up) {
-            this.sessionListener.onSessionDown(thisInstance(), new EOFException("End of input"));
+            sessionListener.onSessionDown(thisInstance(), new EOFException("End of input"));
         }
     }
 
     protected void sessionUp() {
         LOG.debug("Session {} up", this);
         sessionListener.onSessionUp(thisInstance());
-        this.up = true;
+        up = true;
     }
 
     @Override
     public String toString() {
         final StringBuilder sb = new StringBuilder(getClass().getSimpleName() + "{");
-        sb.append("sessionId=").append(sessionId);
+        sb.append("sessionId=").append(sessionId.getValue());
         sb.append(", channel=").append(channel);
         sb.append('}');
         return sb.toString();
@@ -119,7 +127,7 @@ public abstract class AbstractNetconfSession<S extends NetconfSession, L extends
     }
 
     protected final void replaceMessageEncoderAfterNextMessage(final ChannelHandler handler) {
-        this.delayedEncoder = handler;
+        delayedEncoder = handler;
     }
 
     protected final void replaceChannelHandler(final String handlerName, final ChannelHandler handler) {
@@ -162,7 +170,7 @@ public abstract class AbstractNetconfSession<S extends NetconfSession, L extends
         return up;
     }
 
-    public final long getSessionId() {
+    public final @NonNull SessionIdType sessionId() {
         return sessionId;
     }
 
@@ -183,7 +191,13 @@ public abstract class AbstractNetconfSession<S extends NetconfSession, L extends
     @Override
     protected final void channelRead0(final ChannelHandlerContext ctx, final Object msg) {
         LOG.debug("Message was received: {}", msg);
-        handleMessage((NetconfMessage) msg);
+        if (msg instanceof NetconfMessage message) {
+            handleMessage(message);
+        } else if (msg instanceof Exception failure) {
+            handleError(failure);
+        } else {
+            LOG.warn("Ignoring unexpected message {}", msg);
+        }
     }
 
     @Override

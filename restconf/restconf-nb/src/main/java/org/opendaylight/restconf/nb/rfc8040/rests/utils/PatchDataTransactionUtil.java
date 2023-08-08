@@ -7,13 +7,8 @@
  */
 package org.opendaylight.restconf.nb.rfc8040.rests.utils;
 
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.Lists;
-import com.google.common.util.concurrent.FluentFuture;
 import java.util.ArrayList;
 import java.util.List;
-import javax.ws.rs.core.Response.Status;
-import org.opendaylight.mdsal.common.api.CommitInfo;
 import org.opendaylight.mdsal.common.api.LogicalDatastoreType;
 import org.opendaylight.mdsal.dom.api.DOMTransactionChain;
 import org.opendaylight.restconf.common.errors.RestconfDocumentedException;
@@ -52,7 +47,7 @@ public final class PatchDataTransactionUtil {
      */
     public static PatchStatusContext patchData(final PatchContext context, final RestconfStrategy strategy,
                                                final EffectiveModelContext schemaContext) {
-        final List<PatchStatusEntity> editCollection = new ArrayList<>();
+        final var editCollection = new ArrayList<PatchStatusEntity>();
         boolean noError = true;
         final RestconfTransaction transaction = strategy.prepareWriteExecution();
 
@@ -65,8 +60,7 @@ public final class PatchDataTransactionUtil {
                                 schemaContext, transaction);
                             editCollection.add(new PatchStatusEntity(patchEntity.getEditId(), true, null));
                         } catch (final RestconfDocumentedException e) {
-                            editCollection.add(new PatchStatusEntity(patchEntity.getEditId(),
-                                    false, Lists.newArrayList(e.getErrors())));
+                            editCollection.add(new PatchStatusEntity(patchEntity.getEditId(), false, e.getErrors()));
                             noError = false;
                         }
                         break;
@@ -75,8 +69,7 @@ public final class PatchDataTransactionUtil {
                             deleteDataWithinTransaction(patchEntity.getTargetNode(), transaction);
                             editCollection.add(new PatchStatusEntity(patchEntity.getEditId(), true, null));
                         } catch (final RestconfDocumentedException e) {
-                            editCollection.add(new PatchStatusEntity(patchEntity.getEditId(),
-                                    false, Lists.newArrayList(e.getErrors())));
+                            editCollection.add(new PatchStatusEntity(patchEntity.getEditId(), false, e.getErrors()));
                             noError = false;
                         }
                         break;
@@ -86,8 +79,7 @@ public final class PatchDataTransactionUtil {
                                 schemaContext, transaction);
                             editCollection.add(new PatchStatusEntity(patchEntity.getEditId(), true, null));
                         } catch (final RestconfDocumentedException e) {
-                            editCollection.add(new PatchStatusEntity(patchEntity.getEditId(),
-                                    false, Lists.newArrayList(e.getErrors())));
+                            editCollection.add(new PatchStatusEntity(patchEntity.getEditId(), false, e.getErrors()));
                             noError = false;
                         }
                         break;
@@ -97,8 +89,7 @@ public final class PatchDataTransactionUtil {
                                 schemaContext, transaction);
                             editCollection.add(new PatchStatusEntity(patchEntity.getEditId(), true, null));
                         } catch (final RestconfDocumentedException e) {
-                            editCollection.add(new PatchStatusEntity(patchEntity.getEditId(),
-                                    false, Lists.newArrayList(e.getErrors())));
+                            editCollection.add(new PatchStatusEntity(patchEntity.getEditId(), false, e.getErrors()));
                             noError = false;
                         }
                         break;
@@ -107,15 +98,14 @@ public final class PatchDataTransactionUtil {
                             removeDataWithinTransaction(patchEntity.getTargetNode(), transaction);
                             editCollection.add(new PatchStatusEntity(patchEntity.getEditId(), true, null));
                         } catch (final RestconfDocumentedException e) {
-                            editCollection.add(new PatchStatusEntity(patchEntity.getEditId(),
-                                    false, Lists.newArrayList(e.getErrors())));
+                            editCollection.add(new PatchStatusEntity(patchEntity.getEditId(), false, e.getErrors()));
                             noError = false;
                         }
                         break;
                     default:
-                        editCollection.add(new PatchStatusEntity(patchEntity.getEditId(),
-                                false, Lists.newArrayList(new RestconfError(ErrorType.PROTOCOL,
-                                ErrorTag.OPERATION_NOT_SUPPORTED, "Not supported Yang Patch operation"))));
+                        editCollection.add(new PatchStatusEntity(patchEntity.getEditId(), false,
+                            List.of(new RestconfError(ErrorType.PROTOCOL, ErrorTag.OPERATION_NOT_SUPPORTED,
+                                "Not supported Yang Patch operation"))));
                         noError = false;
                         break;
                 }
@@ -126,21 +116,17 @@ public final class PatchDataTransactionUtil {
 
         // if no errors then submit transaction, otherwise cancel
         if (noError) {
-            final ResponseFactory response = new ResponseFactory(Status.OK);
-            final FluentFuture<? extends CommitInfo> future = transaction.commit();
-
             try {
-                FutureCallbackTx.addCallback(future, PATCH_TX_TYPE, response, null);
-            } catch (final RestconfDocumentedException e) {
+                TransactionUtil.syncCommit(transaction.commit(), PATCH_TX_TYPE, null);
+            } catch (RestconfDocumentedException e) {
                 // if errors occurred during transaction commit then patch failed and global errors are reported
-                return new PatchStatusContext(context.getPatchId(), ImmutableList.copyOf(editCollection), false,
-                        Lists.newArrayList(e.getErrors()));
+                return new PatchStatusContext(context.getPatchId(), List.copyOf(editCollection), false, e.getErrors());
             }
 
-            return new PatchStatusContext(context.getPatchId(), ImmutableList.copyOf(editCollection), true, null);
+            return new PatchStatusContext(context.getPatchId(), List.copyOf(editCollection), true, null);
         } else {
             transaction.cancel();
-            return new PatchStatusContext(context.getPatchId(), ImmutableList.copyOf(editCollection), false, null);
+            return new PatchStatusContext(context.getPatchId(), List.copyOf(editCollection), false, null);
         }
     }
 
@@ -154,8 +140,8 @@ public final class PatchDataTransactionUtil {
     private static void createDataWithinTransaction(final YangInstanceIdentifier path, final NormalizedNode payload,
                                                     final EffectiveModelContext schemaContext,
                                                     final RestconfTransaction transaction) {
-        LOG.trace("POST {} within Restconf Patch: {} with payload {}", LogicalDatastoreType.CONFIGURATION.name(),
-            path, payload);
+        LOG.trace("POST {} within Restconf Patch: {} with payload {}", LogicalDatastoreType.CONFIGURATION, path,
+            payload);
         transaction.create(path, payload, schemaContext);
     }
 
@@ -167,7 +153,7 @@ public final class PatchDataTransactionUtil {
      */
     private static void deleteDataWithinTransaction(final YangInstanceIdentifier path,
                                                     final RestconfTransaction transaction) {
-        LOG.trace("Delete {} within Restconf Patch: {}", LogicalDatastoreType.CONFIGURATION.name(), path);
+        LOG.trace("Delete {} within Restconf Patch: {}", LogicalDatastoreType.CONFIGURATION, path);
         transaction.delete(path);
     }
 
@@ -181,8 +167,8 @@ public final class PatchDataTransactionUtil {
     private static void mergeDataWithinTransaction(final YangInstanceIdentifier path, final NormalizedNode payload,
                                                    final EffectiveModelContext schemaContext,
                                                    final RestconfTransaction transaction) {
-        LOG.trace("Merge {} within Restconf Patch: {} with payload {}", LogicalDatastoreType.CONFIGURATION.name(),
-            path, payload);
+        LOG.trace("Merge {} within Restconf Patch: {} with payload {}", LogicalDatastoreType.CONFIGURATION, path,
+            payload);
         TransactionUtil.ensureParentsByMerge(path, schemaContext, transaction);
         transaction.merge(path, payload);
     }
@@ -195,7 +181,7 @@ public final class PatchDataTransactionUtil {
      */
     private static void removeDataWithinTransaction(final YangInstanceIdentifier path,
                                                     final RestconfTransaction transaction) {
-        LOG.trace("Remove {} within Restconf Patch: {}", LogicalDatastoreType.CONFIGURATION.name(), path);
+        LOG.trace("Remove {} within Restconf Patch: {}", LogicalDatastoreType.CONFIGURATION, path);
         transaction.remove(path);
     }
 
@@ -209,8 +195,8 @@ public final class PatchDataTransactionUtil {
     private static void replaceDataWithinTransaction(final YangInstanceIdentifier path, final NormalizedNode payload,
                                                      final EffectiveModelContext schemaContext,
                                                      final RestconfTransaction transaction) {
-        LOG.trace("PUT {} within Restconf Patch: {} with payload {}",
-            LogicalDatastoreType.CONFIGURATION.name(), path, payload);
+        LOG.trace("PUT {} within Restconf Patch: {} with payload {}", LogicalDatastoreType.CONFIGURATION, path,
+            payload);
         transaction.replace(path, payload, schemaContext);
     }
 }

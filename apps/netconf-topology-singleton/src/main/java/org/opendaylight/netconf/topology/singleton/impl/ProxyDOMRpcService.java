@@ -19,8 +19,8 @@ import java.util.Collection;
 import org.opendaylight.mdsal.dom.api.DOMRpcAvailabilityListener;
 import org.opendaylight.mdsal.dom.api.DOMRpcResult;
 import org.opendaylight.mdsal.dom.spi.DefaultDOMRpcResult;
-import org.opendaylight.netconf.sal.connect.api.RemoteDeviceId;
-import org.opendaylight.netconf.sal.connect.api.RemoteDeviceServices.Rpcs;
+import org.opendaylight.netconf.client.mdsal.api.RemoteDeviceId;
+import org.opendaylight.netconf.client.mdsal.api.RemoteDeviceServices.Rpcs;
 import org.opendaylight.netconf.topology.singleton.impl.utils.ClusteringRpcException;
 import org.opendaylight.netconf.topology.singleton.messages.NormalizedNodeMessage;
 import org.opendaylight.netconf.topology.singleton.messages.SchemaPathMessage;
@@ -57,7 +57,7 @@ public class ProxyDOMRpcService implements Rpcs.Normalized {
         LOG.trace("{}: Rpc operation invoked with schema type: {} and node: {}.", id, type, input);
 
         final NormalizedNodeMessage normalizedNodeMessage = input != null
-                ? new NormalizedNodeMessage(YangInstanceIdentifier.empty(), input) : null;
+                ? new NormalizedNodeMessage(YangInstanceIdentifier.of(), input) : null;
         final Future<Object> scalaFuture = Patterns.ask(masterActorRef,
                 new InvokeRpcMessage(new SchemaPathMessage(type), normalizedNodeMessage), actorResponseWaitTime);
 

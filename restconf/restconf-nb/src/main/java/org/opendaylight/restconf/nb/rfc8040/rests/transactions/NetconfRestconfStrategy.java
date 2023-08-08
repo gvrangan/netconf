@@ -9,7 +9,6 @@ package org.opendaylight.restconf.nb.rfc8040.rests.transactions;
 
 import static java.util.Objects.requireNonNull;
 
-import com.google.common.util.concurrent.FluentFuture;
 import com.google.common.util.concurrent.FutureCallback;
 import com.google.common.util.concurrent.Futures;
 import com.google.common.util.concurrent.ListenableFuture;
@@ -17,13 +16,15 @@ import com.google.common.util.concurrent.MoreExecutors;
 import com.google.common.util.concurrent.SettableFuture;
 import java.util.List;
 import java.util.Optional;
+import org.opendaylight.mdsal.common.api.CommitInfo;
 import org.opendaylight.mdsal.common.api.LogicalDatastoreType;
 import org.opendaylight.mdsal.common.api.ReadFailedException;
 import org.opendaylight.netconf.dom.api.NetconfDataTreeService;
+import org.opendaylight.restconf.common.errors.SettableRestconfFuture;
+import org.opendaylight.restconf.nb.rfc8040.rests.utils.TransactionUtil;
+import org.opendaylight.yangtools.yang.common.Empty;
 import org.opendaylight.yangtools.yang.data.api.YangInstanceIdentifier;
 import org.opendaylight.yangtools.yang.data.api.schema.NormalizedNode;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 /**
  * Implementation of RESTCONF operations on top of a raw NETCONF backend.
@@ -31,12 +32,27 @@ import org.slf4j.LoggerFactory;
  * @see NetconfDataTreeService
  */
 public final class NetconfRestconfStrategy extends RestconfStrategy {
-    private static final Logger LOG = LoggerFactory.getLogger(NetconfRestconfStrategy.class);
-
     private final NetconfDataTreeService netconfService;
 
     public NetconfRestconfStrategy(final NetconfDataTreeService netconfService) {
         this.netconfService = requireNonNull(netconfService);
+    }
+
+    @Override
+    protected void delete(final SettableRestconfFuture<Empty> future, final YangInstanceIdentifier path) {
+        final var tx = prepareWriteExecution();
+        tx.delete(path);
+        Futures.addCallback(tx.commit(), new FutureCallback<CommitInfo>() {
+            @Override
+            public void onSuccess(final CommitInfo result) {
+                future.set(Empty.value());
+            }
+
+            @Override
+            public void onFailure(final Throwable cause) {
+                future.setFailure(TransactionUtil.decodeException(cause, "DELETE", path));
+            }
+        }, MoreExecutors.directExecutor());
     }
 
     @Override
@@ -47,46 +63,31 @@ public final class NetconfRestconfStrategy extends RestconfStrategy {
     @Override
     public ListenableFuture<Optional<NormalizedNode>> read(final LogicalDatastoreType store,
             final YangInstanceIdentifier path) {
-        switch (store) {
-            case CONFIGURATION:
-                return netconfService.getConfig(path);
-            case OPERATIONAL:
-                return netconfService.get(path);
-            default:
-                LOG.info("Unknown datastore type: {}.", store);
-                throw new IllegalArgumentException(String.format(
-                        "%s, Cannot read data %s for %s datastore, unknown datastore type",
-                        netconfService.getDeviceId(), path, store));
-        }
+        return switch (store) {
+            case CONFIGURATION -> netconfService.getConfig(path);
+            case OPERATIONAL -> netconfService.get(path);
+        };
     }
 
     @Override
     public ListenableFuture<Optional<NormalizedNode>> read(final LogicalDatastoreType store,
             final YangInstanceIdentifier path, final List<YangInstanceIdentifier> fields) {
-        switch (store) {
-            case CONFIGURATION:
-                return netconfService.getConfig(path, fields);
-            case OPERATIONAL:
-                return netconfService.get(path, fields);
-            default:
-                LOG.info("Unknown datastore type: {}.", store);
-                throw new IllegalArgumentException(String.format(
-                        "%s, Cannot read data %s with fields %s for %s datastore, unknown datastore type",
-                        netconfService.getDeviceId(), path, fields, store));
-        }
+        return switch (store) {
+            case CONFIGURATION -> netconfService.getConfig(path, fields);
+            case OPERATIONAL -> netconfService.get(path, fields);
+        };
     }
 
     @Override
-    public FluentFuture<Boolean> exists(final LogicalDatastoreType store, final YangInstanceIdentifier path) {
-        return remapException(read(store, path))
-                .transform(optionalNode -> optionalNode != null && optionalNode.isPresent(),
-                        MoreExecutors.directExecutor());
+    public ListenableFuture<Boolean> exists(final LogicalDatastoreType store, final YangInstanceIdentifier path) {
+        return Futures.transform(remapException(read(store, path)),
+            optionalNode -> optionalNode != null && optionalNode.isPresent(),
+            MoreExecutors.directExecutor());
     }
 
-    private static <T> FluentFuture<T> remapException(final ListenableFuture<T> input) {
-        final SettableFuture<T> ret = SettableFuture.create();
+    private static <T> ListenableFuture<T> remapException(final ListenableFuture<T> input) {
+        final var ret = SettableFuture.<T>create();
         Futures.addCallback(input, new FutureCallback<T>() {
-
             @Override
             public void onSuccess(final T result) {
                 ret.set(result);
@@ -98,6 +99,6 @@ public final class NetconfRestconfStrategy extends RestconfStrategy {
                     : new ReadFailedException("NETCONF operation failed", cause));
             }
         }, MoreExecutors.directExecutor());
-        return FluentFuture.from(ret);
+        return ret;
     }
 }

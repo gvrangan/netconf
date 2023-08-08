@@ -15,7 +15,6 @@ import java.io.InputStream;
 import java.net.URISyntaxException;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Optional;
 import javax.xml.parsers.ParserConfigurationException;
 import javax.xml.stream.XMLStreamException;
 import javax.xml.transform.dom.DOMSource;
@@ -28,7 +27,7 @@ import org.opendaylight.yangtools.yang.data.api.schema.NormalizedNode;
 import org.opendaylight.yangtools.yang.data.api.schema.stream.NormalizedNodeStreamWriter;
 import org.opendaylight.yangtools.yang.data.codec.xml.XmlParserStream;
 import org.opendaylight.yangtools.yang.data.impl.schema.ImmutableNormalizedNodeStreamWriter;
-import org.opendaylight.yangtools.yang.data.impl.schema.NormalizedNodeResult;
+import org.opendaylight.yangtools.yang.data.impl.schema.NormalizationResultHolder;
 import org.opendaylight.yangtools.yang.model.api.ContainerSchemaNode;
 import org.opendaylight.yangtools.yang.model.api.DataNodeContainer;
 import org.opendaylight.yangtools.yang.model.api.DataSchemaNode;
@@ -70,8 +69,7 @@ public final class TestRestconfUtils {
     @SuppressWarnings("checkstyle:IllegalCatch")
     public static NormalizedNodePayload loadNormalizedContextFromXmlFile(final String pathToInputFile,
             final String uri, final EffectiveModelContext schemaContext) {
-        final InstanceIdentifierContext iiContext =
-                ParserIdentifier.toInstanceIdentifier(uri, schemaContext, Optional.empty());
+        final InstanceIdentifierContext iiContext = ParserIdentifier.toInstanceIdentifier(uri, schemaContext, null);
         final InputStream inputStream = TestRestconfUtils.class.getResourceAsStream(pathToInputFile);
         try {
             final Document doc = UntrustedXML.newDocumentBuilder().parse(inputStream);
@@ -114,13 +112,13 @@ public final class TestRestconfUtils {
             }
         }
 
-        final NormalizedNodeResult resultHolder = new NormalizedNodeResult();
+        final NormalizationResultHolder resultHolder = new NormalizationResultHolder();
         final NormalizedNodeStreamWriter writer = ImmutableNormalizedNodeStreamWriter.from(resultHolder);
         final XmlParserStream xmlParser = XmlParserStream.create(writer, iiContext.inference());
 
         if (schemaNode instanceof ContainerSchemaNode || schemaNode instanceof ListSchemaNode) {
             xmlParser.traverse(new DOMSource(doc.getDocumentElement()));
-            return resultHolder.getResult();
+            return resultHolder.getResult().data();
         }
         // FIXME : add another DataSchemaNode extensions e.g. LeafSchemaNode
         return null;

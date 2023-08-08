@@ -18,18 +18,19 @@ import java.util.NavigableMap;
 import java.util.Set;
 import java.util.TreeMap;
 import org.opendaylight.netconf.api.DocumentedException;
-import org.opendaylight.netconf.api.monitoring.NetconfMonitoringService;
 import org.opendaylight.netconf.api.xml.XmlUtil;
-import org.opendaylight.netconf.mapping.api.HandlingPriority;
-import org.opendaylight.netconf.mapping.api.NetconfOperation;
-import org.opendaylight.netconf.mapping.api.NetconfOperationChainedExecution;
-import org.opendaylight.netconf.mapping.api.NetconfOperationService;
-import org.opendaylight.netconf.mapping.api.SessionAwareNetconfOperation;
 import org.opendaylight.netconf.server.NetconfServerSession;
+import org.opendaylight.netconf.server.api.monitoring.NetconfMonitoringService;
+import org.opendaylight.netconf.server.api.operations.HandlingPriority;
+import org.opendaylight.netconf.server.api.operations.NetconfOperation;
+import org.opendaylight.netconf.server.api.operations.NetconfOperationChainedExecution;
+import org.opendaylight.netconf.server.api.operations.NetconfOperationService;
+import org.opendaylight.netconf.server.api.operations.SessionAwareNetconfOperation;
 import org.opendaylight.netconf.server.mapping.operations.DefaultCloseSession;
 import org.opendaylight.netconf.server.mapping.operations.DefaultNetconfOperation;
 import org.opendaylight.netconf.server.mapping.operations.DefaultStartExi;
 import org.opendaylight.netconf.server.mapping.operations.DefaultStopExi;
+import org.opendaylight.yang.gen.v1.urn.ietf.params.xml.ns.netconf.base._1._0.rev110601.SessionIdType;
 import org.opendaylight.yangtools.yang.common.ErrorSeverity;
 import org.opendaylight.yangtools.yang.common.ErrorTag;
 import org.opendaylight.yangtools.yang.common.ErrorType;
@@ -37,14 +38,15 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.w3c.dom.Document;
 
-public class NetconfOperationRouterImpl implements NetconfOperationRouter {
+// Non-final for testing
+public class NetconfOperationRouterImpl implements NetconfOperationRouter, AutoCloseable {
     private static final Logger LOG = LoggerFactory.getLogger(NetconfOperationRouterImpl.class);
 
     private final NetconfOperationService netconfOperationServiceSnapshot;
     private final Collection<NetconfOperation> allNetconfOperations;
 
     public NetconfOperationRouterImpl(final NetconfOperationService netconfOperationServiceSnapshot,
-                                      final NetconfMonitoringService netconfMonitoringService, final String sessionId) {
+            final NetconfMonitoringService netconfMonitoringService, final SessionIdType sessionId) {
         this.netconfOperationServiceSnapshot = requireNonNull(netconfOperationServiceSnapshot);
 
         final Set<NetconfOperation> ops = new HashSet<>();
@@ -59,8 +61,8 @@ public class NetconfOperationRouterImpl implements NetconfOperationRouter {
 
     @SuppressWarnings("checkstyle:IllegalCatch")
     @Override
-    public Document onNetconfMessage(final Document message, final NetconfServerSession session) throws
-            DocumentedException {
+    public Document onNetconfMessage(final Document message, final NetconfServerSession session)
+            throws DocumentedException {
         requireNonNull(allNetconfOperations, "Operation router was not initialized properly");
 
         final NetconfOperationExecution netconfOperationExecution;

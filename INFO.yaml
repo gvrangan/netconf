@@ -8,7 +8,7 @@ project_lead: &odl_netconf_ptl
     email: 'nite@hq.sk'
     company: ''
     id: 'rovarga'
-    timezone: 'Unknown/Unknown'
+    timezone: 'Europe/Bratislava'
 primary_contact: *odl_netconf_ptl
 issue_tracking:
     type: 'jira'
@@ -34,11 +34,16 @@ repositories:
     - netconf
 committers:
     - <<: *odl_netconf_ptl
-    - name: 'Tomas Cere'
+    - name: 'Tomáš Cére'
       email: 'tomas.cere@pantheon.tech'
       company: 'pantheon'
       id: 'tcere'
-      timezone: 'Unknown/Unknown'
+      timezone: 'Europe/Bratislava'
+    - name: 'Ivan Hraško'
+      email: 'ivan.hrasko@pantheon.tech'
+      company: 'pantheon'
+      id: 'ivanhrasko'
+      timezone: 'Europe/Bratislava'
 tsc:
     # yamllint disable rule:line-length
     approval: 'https://lists.opendaylight.org/pipermail/release/2015-July/003099.html'

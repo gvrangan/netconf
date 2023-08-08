@@ -28,18 +28,20 @@ import org.mockito.Mock;
 import org.mockito.junit.MockitoJUnitRunner;
 import org.opendaylight.netconf.api.NetconfMessage;
 import org.opendaylight.netconf.api.NetconfTerminationReason;
-import org.opendaylight.netconf.api.monitoring.NetconfMonitoringService;
-import org.opendaylight.netconf.api.monitoring.SessionEvent;
-import org.opendaylight.netconf.api.monitoring.SessionListener;
+import org.opendaylight.netconf.api.messages.NotificationMessage;
 import org.opendaylight.netconf.api.xml.XmlUtil;
-import org.opendaylight.netconf.notifications.NetconfNotification;
-import org.opendaylight.netconf.server.osgi.NetconfOperationRouter;
+import org.opendaylight.netconf.server.api.monitoring.NetconfMonitoringService;
+import org.opendaylight.netconf.server.api.monitoring.SessionEvent;
+import org.opendaylight.netconf.server.api.monitoring.SessionListener;
+import org.opendaylight.netconf.server.osgi.NetconfOperationRouterImpl;
+import org.opendaylight.yang.gen.v1.urn.ietf.params.xml.ns.netconf.base._1._0.rev110601.SessionIdType;
+import org.opendaylight.yangtools.yang.common.Uint32;
 import org.w3c.dom.Document;
 
 @RunWith(MockitoJUnitRunner.StrictStubs.class)
 public class NetconfServerSessionListenerTest {
     @Mock
-    private NetconfOperationRouter router;
+    private NetconfOperationRouterImpl router;
     @Mock
     private NetconfMonitoringService monitoring;
     @Mock
@@ -62,7 +64,7 @@ public class NetconfServerSessionListenerTest {
         doNothing().when(monitoringListener).onSessionDown(any());
         doNothing().when(monitoringListener).onSessionEvent(any());
         channel = new EmbeddedChannel();
-        session = new NetconfServerSession(null, channel, 0L, null);
+        session = new NetconfServerSession(null, channel, new SessionIdType(Uint32.ONE), null);
         listener = new NetconfServerSessionListener(router, monitoring, closeable);
     }
 
@@ -116,7 +118,6 @@ public class NetconfServerSessionListenerTest {
         verify(monitoringListener).onSessionEvent(argThat(sessionEventIs(SessionEvent.Type.IN_RPC_FAIL)));
     }
 
-    @SuppressWarnings("checkstyle:RegexpSinglelineJava")
     @Test
     public void testOnMessageDocumentedFail() throws Exception {
         final Document reply =
@@ -139,15 +140,13 @@ public class NetconfServerSessionListenerTest {
         verify(monitoringListener).onSessionEvent(argThat(sessionEventIs(SessionEvent.Type.OUT_RPC_ERROR)));
         channel.runPendingTasks();
         final NetconfMessage sentMsg = channel.readOutbound();
-        System.out.println(XmlUtil.toString(sentMsg.getDocument()));
-        System.out.println(XmlUtil.toString(reply));
         final Diff diff = XMLUnit.compareXML(reply, sentMsg.getDocument());
         assertTrue(diff.toString(), diff.similar());
     }
 
     @Test
     public void testOnNotification() throws Exception {
-        listener.onNotification(session, new NetconfNotification(XmlUtil.readXmlToDocument("<notification/>")));
+        listener.onNotification(session, new NotificationMessage(XmlUtil.readXmlToDocument("<notification/>")));
         verify(monitoringListener).onSessionEvent(argThat(sessionEventIs(SessionEvent.Type.NOTIFICATION)));
     }
 

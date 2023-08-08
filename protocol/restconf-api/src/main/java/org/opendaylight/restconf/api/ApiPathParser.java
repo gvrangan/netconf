@@ -14,6 +14,7 @@ import static java.util.Objects.requireNonNull;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableList.Builder;
 import java.text.ParseException;
+import java.util.HexFormat;
 import java.util.function.Supplier;
 import org.eclipse.jdt.annotation.NonNull;
 import org.eclipse.jdt.annotation.Nullable;
@@ -27,7 +28,7 @@ import org.slf4j.LoggerFactory;
 /**
  * Parser for a sequence of {@link ApiPath}'s {@link Step}s.
  */
-class ApiPathParser {
+sealed class ApiPathParser {
     private static final Logger LOG = LoggerFactory.getLogger(ApiPathParser.class);
 
     /**
@@ -65,35 +66,36 @@ class ApiPathParser {
         }
     }
 
-    private static final Supplier<org.opendaylight.restconf.api.ApiPathParser> URL_FACTORY;
+    private static final Supplier<@NonNull ApiPathParser> URL_FACTORY;
 
     static {
         // Select the correct parser implementation where consecutive slashes are concerned. We default to lenient
         // interpretation and treat them as a single slash, but allow this to be overridden through a system property.
         final String prop = System.getProperty("org.opendaylight.restconf.url.consecutive-slashes", "reject");
         final String treatment;
-        switch (prop) {
-            case "allow":
+        URL_FACTORY = switch (prop) {
+            case "allow" -> {
                 treatment = "are treated as a single slash";
-                URL_FACTORY = Lenient::new;
-                break;
-            case "debug":
+                yield Lenient::new;
+            }
+            case "debug" -> {
                 treatment = "are treated as a single slash and will be logged";
-                URL_FACTORY = () -> new Logging(LOG::debug);
-                break;
-            case "warn":
+                yield () -> new Logging(LOG::debug);
+            }
+            case "warn" -> {
                 treatment = "are treated as a single slash and will be warned about";
-                URL_FACTORY = () -> new Logging(LOG::warn);
-                break;
-            case "reject":
+                yield () -> new Logging(LOG::warn);
+            }
+            case "reject" -> {
                 treatment = "will be rejected";
-                URL_FACTORY = ApiPathParser::new;
-                break;
-            default:
+                yield ApiPathParser::new;
+            }
+            default -> {
                 LOG.warn("Unknown property value '{}', assuming 'reject'", prop);
                 treatment = "will be rejected";
-                URL_FACTORY = ApiPathParser::new;
-        }
+                yield ApiPathParser::new;
+            }
+        };
 
         LOG.info("Consecutive slashes in REST URLs {}", treatment);
     }
@@ -307,22 +309,13 @@ class ApiPathParser {
         return (byte) (parseHex(str, offset + 1) << 4 | parseHex(str, offset + 2));
     }
 
-    // FIXME: Replace with HexFormat.fromHexDigit(str.charAt(offset)) when we have JDK17+
+    @SuppressWarnings("checkstyle:AvoidHidingCauseException")
     private static int parseHex(final String str, final int offset) throws ParseException {
-        final char ch = str.charAt(offset);
-        if (ch >= '0' && ch <= '9') {
-            return ch - '0';
+        try {
+            return HexFormat.fromHexDigit(str.charAt(offset));
+        } catch (NumberFormatException e) {
+            // There is no way to preserve the cause which CheckStyle would recognize
+            throw new ParseException(e.getMessage(), offset);
         }
-
-        final int zero;
-        if (ch >= 'a' && ch <= 'f') {
-            zero = 'a';
-        } else if (ch >= 'A' && ch <= 'F') {
-            zero = 'A';
-        } else {
-            throw new ParseException("Invalid escape character '" + ch + "'", offset);
-        }
-
-        return ch - zero + 10;
     }
 }

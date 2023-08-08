@@ -13,13 +13,13 @@
   <parent>
     <groupId>org.opendaylight.odlparent</groupId>
     <artifactId>odlparent-lite</artifactId>
-    <version>12.0.5</version>
+    <version>13.0.3</version>
     <relativePath/>
   </parent>
 
   <groupId>org.opendaylight.netconf</groupId>
   <artifactId>netconf-subsystem</artifactId>
-  <version>6.0.0-SNAPSHOT</version>
+  <version>7.0.0-SNAPSHOT</version>
   <packaging>pom</packaging>
   <name>${project.artifactId}</name>
 
@@ -30,18 +30,9 @@
 
   <modules>
     <module>netconf-config</module>
-    <module>mdsal-netconf-ssh</module>
-    <module>mdsal-netconf-tcp</module>
-    <module>mdsal-netconf-connector</module>
-    <module>mdsal-netconf-monitoring</module>
-    <module>mdsal-netconf-notification</module>
     <module>mdsal-netconf-yang-library</module>
-    <module>mdsal-netconf-impl</module>
     <module>netconf-netty-util</module>
-    <module>netconf-mapping-api</module>
     <module>netconf-auth</module>
-    <module>aaa-authn-odl-plugin</module>
-    <module>netconf-notifications-api</module>
     <module>yanglib</module>
     <module>tools</module>
 

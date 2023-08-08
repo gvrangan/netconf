@@ -44,7 +44,6 @@ import org.opendaylight.mdsal.dom.api.DOMRpcService;
 import org.opendaylight.mdsal.dom.spi.DefaultDOMRpcResult;
 import org.opendaylight.restconf.common.context.InstanceIdentifierContext;
 import org.opendaylight.restconf.common.errors.RestconfDocumentedException;
-import org.opendaylight.restconf.nb.rfc8040.TestRestconfUtils;
 import org.opendaylight.restconf.nb.rfc8040.legacy.NormalizedNodePayload;
 import org.opendaylight.restconf.nb.rfc8040.streams.StreamsConfiguration;
 import org.opendaylight.yangtools.yang.common.ErrorTag;
@@ -82,8 +81,8 @@ public class RestconfInvokeOperationsServiceImplTest {
     private RestconfInvokeOperationsServiceImpl invokeOperationsService;
 
     @BeforeClass
-    public static void beforeClass() throws Exception {
-        CONTEXT = YangParserTestUtils.parseYangFiles(TestRestconfUtils.loadFiles("/invoke-rpc"));
+    public static void beforeClass() {
+        CONTEXT = YangParserTestUtils.parseYangResourceDirectory("/invoke-rpc");
     }
 
     @Before
@@ -125,8 +124,8 @@ public class RestconfInvokeOperationsServiceImplTest {
         final DOMRpcResult mockResult = new DefaultDOMRpcResult(OUTPUT, List.of());
         doReturn(immediateFluentFuture(mockResult)).when(rpcService).invokeRpc(RPC, INPUT);
         final DOMRpcResult rpcResult = RestconfInvokeOperationsServiceImpl.invokeRpc(INPUT, RPC, rpcService).get();
-        assertTrue(rpcResult.getErrors().isEmpty());
-        assertEquals(OUTPUT, rpcResult.getResult());
+        assertTrue(rpcResult.errors().isEmpty());
+        assertEquals(OUTPUT, rpcResult.value());
     }
 
     @Test
@@ -136,8 +135,8 @@ public class RestconfInvokeOperationsServiceImplTest {
                 "No implementation of RPC " + errorRpc + " available.");
         doReturn(immediateFailedFluentFuture(exception)).when(rpcService).invokeRpc(errorRpc, INPUT);
         final DOMRpcResult rpcResult = RestconfInvokeOperationsServiceImpl.invokeRpc(INPUT, errorRpc, rpcService).get();
-        assertNull(rpcResult.getResult());
-        final Collection<? extends RpcError> errorList = rpcResult.getErrors();
+        assertNull(rpcResult.value());
+        final Collection<? extends RpcError> errorList = rpcResult.errors();
         assertEquals(1, errorList.size());
         final RpcError actual = errorList.iterator().next();
         assertEquals("No implementation of RPC " + errorRpc + " available.", actual.getMessage());
@@ -151,8 +150,8 @@ public class RestconfInvokeOperationsServiceImplTest {
         final DOMRpcResult mockResult = new DefaultDOMRpcResult(OUTPUT, List.of());
         doReturn(immediateFluentFuture(mockResult)).when(rpcService).invokeRpc(RPC, INPUT);
         final DOMRpcResult rpcResult = RestconfInvokeOperationsServiceImpl.invokeRpc(INPUT, RPC, mountPoint).get();
-        assertTrue(rpcResult.getErrors().isEmpty());
-        assertEquals(OUTPUT, rpcResult.getResult());
+        assertTrue(rpcResult.errors().isEmpty());
+        assertEquals(OUTPUT, rpcResult.value());
     }
 
     @Test
@@ -167,8 +166,8 @@ public class RestconfInvokeOperationsServiceImplTest {
         doReturn(immediateFluentFuture(new DefaultDOMRpcResult(OUTPUT, List.of())))
             .when(rpcService).invokeRpc(RPC, INPUT);
         final DOMRpcResult rpcResult = RestconfInvokeOperationsServiceImpl.invokeRpc(INPUT, RPC, rpcService).get();
-        assertTrue(rpcResult.getErrors().isEmpty());
-        assertEquals(OUTPUT, rpcResult.getResult());
+        assertTrue(rpcResult.errors().isEmpty());
+        assertEquals(OUTPUT, rpcResult.value());
     }
 
     private NormalizedNodePayload prepNNC(final ContainerNode result) {
@@ -180,7 +179,7 @@ public class RestconfInvokeOperationsServiceImplTest {
         final ContainerNode data = mock(ContainerNode.class);
         final DOMRpcResult domRpcResult = mock(DOMRpcResult.class);
         doReturn(immediateFluentFuture(domRpcResult)).when(rpcService).invokeRpc(qname, data);
-        doReturn(result).when(domRpcResult).getResult();
+        doReturn(result).when(domRpcResult).value();
         return NormalizedNodePayload.of(
             InstanceIdentifierContext.ofRpcInput(CONTEXT, schemaNode, null), data);
     }

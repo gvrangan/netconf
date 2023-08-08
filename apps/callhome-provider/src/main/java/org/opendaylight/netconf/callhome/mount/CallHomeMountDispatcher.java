@@ -14,28 +14,29 @@ import io.netty.util.concurrent.EventExecutor;
 import io.netty.util.concurrent.FailedFuture;
 import io.netty.util.concurrent.Future;
 import java.net.InetSocketAddress;
-import org.opendaylight.aaa.encrypt.AAAEncryptionService;
 import org.opendaylight.controller.config.threadpool.ScheduledThreadPool;
 import org.opendaylight.controller.config.threadpool.ThreadPool;
 import org.opendaylight.mdsal.binding.api.DataBroker;
 import org.opendaylight.mdsal.dom.api.DOMMountPointService;
-import org.opendaylight.netconf.callhome.mount.CallHomeMountSessionContext.CloseCallback;
 import org.opendaylight.netconf.callhome.protocol.CallHomeChannelActivator;
 import org.opendaylight.netconf.callhome.protocol.CallHomeNetconfSubsystemListener;
 import org.opendaylight.netconf.callhome.protocol.CallHomeProtocolSessionContext;
 import org.opendaylight.netconf.client.NetconfClientDispatcher;
 import org.opendaylight.netconf.client.NetconfClientSession;
 import org.opendaylight.netconf.client.conf.NetconfClientConfiguration;
-import org.opendaylight.netconf.client.conf.NetconfReconnectingClientConfiguration;
-import org.opendaylight.netconf.nettyutil.ReconnectFuture;
-import org.opendaylight.netconf.sal.connect.api.DeviceActionFactory;
-import org.opendaylight.netconf.sal.connect.api.SchemaResourceManager;
-import org.opendaylight.netconf.sal.connect.netconf.schema.mapping.BaseNetconfSchemas;
-import org.opendaylight.yang.gen.v1.urn.tbd.params.xml.ns.yang.network.topology.rev131021.NodeId;
+import org.opendaylight.netconf.client.mdsal.api.BaseNetconfSchemas;
+import org.opendaylight.netconf.client.mdsal.api.DeviceActionFactory;
+import org.opendaylight.netconf.client.mdsal.api.SchemaResourceManager;
+import org.opendaylight.netconf.topology.spi.NetconfClientConfigurationBuilderFactory;
+import org.opendaylight.netconf.topology.spi.NetconfNodeUtils;
 import org.opendaylight.yang.gen.v1.urn.tbd.params.xml.ns.yang.network.topology.rev131021.network.topology.topology.Node;
+import org.osgi.service.component.annotations.Activate;
+import org.osgi.service.component.annotations.Component;
+import org.osgi.service.component.annotations.Reference;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+@Component(service = { CallHomeMountDispatcher.class, CallHomeNetconfSubsystemListener.class }, immediate = true)
 // Non-final for testing
 public class CallHomeMountDispatcher implements NetconfClientDispatcher, CallHomeNetconfSubsystemListener {
     private static final Logger LOG = LoggerFactory.getLogger(CallHomeMountDispatcher.class);
@@ -48,34 +49,44 @@ public class CallHomeMountDispatcher implements NetconfClientDispatcher, CallHom
     private final SchemaResourceManager schemaRepositoryProvider;
     private final DataBroker dataBroker;
     private final DOMMountPointService mountService;
-    private final AAAEncryptionService encryptionService;
+    private final NetconfClientConfigurationBuilderFactory builderFactory;
 
     protected CallHomeTopology topology;
-
-    private final CloseCallback onCloseHandler = deviceContext -> {
-        final var nodeId = deviceContext.getId();
-        LOG.info("Removing {} from Netconf Topology.", nodeId);
-        topology.disconnectNode(nodeId);
-    };
 
     private final DeviceActionFactory deviceActionFactory;
     private final BaseNetconfSchemas baseSchemas;
 
+
     public CallHomeMountDispatcher(final String topologyId, final EventExecutor eventExecutor,
-                                   final ScheduledThreadPool keepaliveExecutor, final ThreadPool processingExecutor,
-                                   final SchemaResourceManager schemaRepositoryProvider,
-                                   final BaseNetconfSchemas baseSchemas, final DataBroker dataBroker,
-                                   final DOMMountPointService mountService,
-                                   final AAAEncryptionService encryptionService) {
+            final ScheduledThreadPool keepaliveExecutor, final ThreadPool processingExecutor,
+            final SchemaResourceManager schemaRepositoryProvider, final BaseNetconfSchemas baseSchemas,
+            final DataBroker dataBroker, final DOMMountPointService mountService,
+            final NetconfClientConfigurationBuilderFactory builderFactory) {
         this(topologyId, eventExecutor, keepaliveExecutor, processingExecutor, schemaRepositoryProvider, baseSchemas,
-            dataBroker, mountService, encryptionService, null);
+            dataBroker, mountService, builderFactory, null);
+    }
+
+    @Activate
+    public CallHomeMountDispatcher(
+            @Reference(target = "(type=global-event-executor)") final EventExecutor eventExecutor,
+            @Reference(target = "(type=global-netconf-ssh-scheduled-executor)")
+                final ScheduledThreadPool keepaliveExecutor,
+            @Reference(target = "(type=global-netconf-processing-executor)") final ThreadPool processingExecutor,
+            @Reference final SchemaResourceManager schemaRepositoryProvider,
+            @Reference final BaseNetconfSchemas baseSchemas, @Reference final DataBroker dataBroker,
+            @Reference final DOMMountPointService mountService,
+            @Reference final NetconfClientConfigurationBuilderFactory builderFactory,
+            @Reference final DeviceActionFactory deviceActionFactory) {
+        this(NetconfNodeUtils.DEFAULT_TOPOLOGY_NAME, eventExecutor, keepaliveExecutor, processingExecutor,
+            schemaRepositoryProvider, baseSchemas, dataBroker, mountService, builderFactory, deviceActionFactory);
     }
 
     public CallHomeMountDispatcher(final String topologyId, final EventExecutor eventExecutor,
             final ScheduledThreadPool keepaliveExecutor, final ThreadPool processingExecutor,
             final SchemaResourceManager schemaRepositoryProvider, final BaseNetconfSchemas baseSchemas,
             final DataBroker dataBroker, final DOMMountPointService mountService,
-            final AAAEncryptionService encryptionService, final DeviceActionFactory deviceActionFactory) {
+            final NetconfClientConfigurationBuilderFactory builderFactory,
+            final DeviceActionFactory deviceActionFactory) {
         this.topologyId = topologyId;
         this.eventExecutor = eventExecutor;
         this.keepaliveExecutor = keepaliveExecutor;
@@ -85,17 +96,12 @@ public class CallHomeMountDispatcher implements NetconfClientDispatcher, CallHom
         this.baseSchemas = requireNonNull(baseSchemas);
         this.dataBroker = dataBroker;
         this.mountService = mountService;
-        this.encryptionService = encryptionService;
+        this.builderFactory = requireNonNull(builderFactory);
     }
 
     @Override
     public Future<NetconfClientSession> createClient(final NetconfClientConfiguration clientConfiguration) {
         return activateChannel(clientConfiguration);
-    }
-
-    @Override
-    public ReconnectFuture createReconnectingClient(final NetconfReconnectingClientConfiguration clientConfiguration) {
-        return new SingleReconnectFuture(eventExecutor, activateChannel(clientConfiguration));
     }
 
     private Future<NetconfClientSession> activateChannel(final NetconfClientConfiguration conf) {
@@ -109,20 +115,22 @@ public class CallHomeMountDispatcher implements NetconfClientDispatcher, CallHom
     @Override
     public void onNetconfSubsystemOpened(final CallHomeProtocolSessionContext session,
                                          final CallHomeChannelActivator activator) {
-        final var deviceContext = sessionManager().createSession(session, activator, onCloseHandler);
+        final var deviceContext = sessionManager().createSession(session, activator, device -> {
+            final var nodeId = device.getId();
+            LOG.info("Removing {} from Netconf Topology.", nodeId);
+            topology.disconnectNode(nodeId);
+        });
         if (deviceContext != null) {
-            final NodeId nodeId = deviceContext.getId();
             final Node configNode = deviceContext.getConfigNode();
             LOG.info("Provisioning fake config {}", configNode);
-            topology.connectNode(nodeId, configNode);
+            topology.connectNode(configNode);
         }
     }
 
     @VisibleForTesting
     void createTopology() {
         topology = new CallHomeTopology(topologyId, this, eventExecutor, keepaliveExecutor, processingExecutor,
-                schemaRepositoryProvider, dataBroker, mountService, encryptionService, baseSchemas,
-                deviceActionFactory);
+                schemaRepositoryProvider, dataBroker, mountService, builderFactory, baseSchemas, deviceActionFactory);
     }
 
     @VisibleForTesting

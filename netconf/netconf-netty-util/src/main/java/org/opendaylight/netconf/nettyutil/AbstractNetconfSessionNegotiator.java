@@ -27,17 +27,19 @@ import org.checkerframework.checker.lock.qual.GuardedBy;
 import org.checkerframework.checker.lock.qual.Holding;
 import org.eclipse.jdt.annotation.NonNull;
 import org.eclipse.jdt.annotation.Nullable;
+import org.opendaylight.netconf.api.CapabilityURN;
+import org.opendaylight.netconf.api.NamespaceURN;
 import org.opendaylight.netconf.api.NetconfDocumentedException;
 import org.opendaylight.netconf.api.NetconfMessage;
 import org.opendaylight.netconf.api.NetconfSessionListener;
-import org.opendaylight.netconf.api.messages.NetconfHelloMessage;
+import org.opendaylight.netconf.api.messages.FramingMechanism;
+import org.opendaylight.netconf.api.messages.HelloMessage;
 import org.opendaylight.netconf.api.xml.XmlNetconfConstants;
 import org.opendaylight.netconf.nettyutil.handler.FramingMechanismHandlerFactory;
 import org.opendaylight.netconf.nettyutil.handler.NetconfChunkAggregator;
 import org.opendaylight.netconf.nettyutil.handler.NetconfMessageToXMLEncoder;
 import org.opendaylight.netconf.nettyutil.handler.NetconfXMLToHelloMessageDecoder;
 import org.opendaylight.netconf.nettyutil.handler.NetconfXMLToMessageDecoder;
-import org.opendaylight.netconf.util.messages.FramingMechanism;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.w3c.dom.Document;
@@ -77,7 +79,7 @@ public abstract class AbstractNetconfSessionNegotiator<S extends AbstractNetconf
         LOG.debug("Default maximum incoming NETCONF chunk size is {} bytes", DEFAULT_MAXIMUM_INCOMING_CHUNK_SIZE);
     }
 
-    private final @NonNull NetconfHelloMessage localHello;
+    private final @NonNull HelloMessage localHello;
     protected final Channel channel;
 
     private final @NonNegative int maximumIncomingChunkSize;
@@ -91,11 +93,11 @@ public abstract class AbstractNetconfSessionNegotiator<S extends AbstractNetconf
     @GuardedBy("this")
     private State state = State.IDLE;
 
-    protected AbstractNetconfSessionNegotiator(final NetconfHelloMessage hello, final Promise<S> promise,
+    protected AbstractNetconfSessionNegotiator(final HelloMessage hello, final Promise<S> promise,
                                                final Channel channel, final Timer timer, final L sessionListener,
                                                final long connectionTimeoutMillis,
                                                final @NonNegative int maximumIncomingChunkSize) {
-        this.localHello = requireNonNull(hello);
+        localHello = requireNonNull(hello);
         this.promise = requireNonNull(promise);
         this.channel = requireNonNull(channel);
         this.timer = timer;
@@ -105,15 +107,7 @@ public abstract class AbstractNetconfSessionNegotiator<S extends AbstractNetconf
         checkArgument(maximumIncomingChunkSize > 0, "Invalid maximum incoming chunk size %s", maximumIncomingChunkSize);
     }
 
-    @Deprecated(since = "4.0.1", forRemoval = true)
-    protected AbstractNetconfSessionNegotiator(final NetconfHelloMessage hello, final Promise<S> promise,
-                                               final Channel channel, final Timer timer,
-                                               final L sessionListener, final long connectionTimeoutMillis) {
-        this(hello, promise, channel, timer, sessionListener, connectionTimeoutMillis,
-            DEFAULT_MAXIMUM_INCOMING_CHUNK_SIZE);
-    }
-
-    protected final @NonNull NetconfHelloMessage localHello() {
+    protected final @NonNull HelloMessage localHello() {
         return localHello;
     }
 
@@ -248,7 +242,7 @@ public abstract class AbstractNetconfSessionNegotiator<S extends AbstractNetconf
         }
     }
 
-    protected final S getSessionForHelloMessage(final NetconfHelloMessage netconfMessage)
+    protected final S getSessionForHelloMessage(final HelloMessage netconfMessage)
             throws NetconfDocumentedException {
         final Document doc = netconfMessage.getDocument();
 
@@ -260,7 +254,7 @@ public abstract class AbstractNetconfSessionNegotiator<S extends AbstractNetconf
         return getSession(sessionListener, channel, netconfMessage);
     }
 
-    protected abstract S getSession(L sessionListener, Channel channel, NetconfHelloMessage message)
+    protected abstract S getSession(L sessionListener, Channel channel, HelloMessage message)
         throws NetconfDocumentedException;
 
     /**
@@ -316,15 +310,13 @@ public abstract class AbstractNetconfSessionNegotiator<S extends AbstractNetconf
         LOG.debug("Changing state from : {} to : {} for channel: {}", state, newState, channel);
         checkState(isStateChangePermitted(state, newState),
                 "Cannot change state from %s to %s for channel %s", state, newState, channel);
-        this.state = newState;
+        state = newState;
     }
 
     private static boolean containsBase11Capability(final Document doc) {
-        final NodeList nList = doc.getElementsByTagNameNS(
-            XmlNetconfConstants.URN_IETF_PARAMS_XML_NS_NETCONF_BASE_1_0,
-            XmlNetconfConstants.CAPABILITY);
+        final NodeList nList = doc.getElementsByTagNameNS(NamespaceURN.BASE, XmlNetconfConstants.CAPABILITY);
         for (int i = 0; i < nList.getLength(); i++) {
-            if (nList.item(i).getTextContent().contains(XmlNetconfConstants.URN_IETF_PARAMS_NETCONF_BASE_1_1)) {
+            if (nList.item(i).getTextContent().contains(CapabilityURN.BASE_1_1)) {
                 return true;
             }
         }
@@ -376,7 +368,7 @@ public abstract class AbstractNetconfSessionNegotiator<S extends AbstractNetconf
 
         LOG.debug("Negotiation read invoked on channel {}", channel);
         try {
-            handleMessage((NetconfHelloMessage) msg);
+            handleMessage((HelloMessage) msg);
         } catch (final Exception e) {
             LOG.debug("Unexpected error while handling negotiation message {} on channel {}", msg, channel, e);
             negotiationFailed(e);
@@ -389,5 +381,5 @@ public abstract class AbstractNetconfSessionNegotiator<S extends AbstractNetconf
         negotiationFailed(cause);
     }
 
-    protected abstract void handleMessage(NetconfHelloMessage msg) throws Exception;
+    protected abstract void handleMessage(HelloMessage msg) throws Exception;
 }

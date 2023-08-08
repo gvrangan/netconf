@@ -30,10 +30,10 @@ import net.sourceforge.argparse4j.inf.ArgumentParserException;
 import org.opendaylight.netconf.api.NetconfMessage;
 import org.opendaylight.netconf.api.xml.XmlUtil;
 import org.opendaylight.netconf.client.NetconfClientDispatcherImpl;
+import org.opendaylight.netconf.client.mdsal.NetconfDeviceCommunicator;
+import org.opendaylight.netconf.client.mdsal.api.NetconfSessionPreferences;
+import org.opendaylight.netconf.client.mdsal.api.RemoteDevice;
 import org.opendaylight.netconf.nettyutil.handler.ssh.client.AsyncSshHandler;
-import org.opendaylight.netconf.sal.connect.api.RemoteDevice;
-import org.opendaylight.netconf.sal.connect.netconf.listener.NetconfDeviceCommunicator;
-import org.opendaylight.netconf.sal.connect.netconf.listener.NetconfSessionPreferences;
 import org.opendaylight.netconf.test.tool.TestToolUtils;
 import org.opendaylight.yang.gen.v1.urn.ietf.params.xml.ns.netconf.base._1._0.rev110601.CommitInput;
 import org.opendaylight.yang.gen.v1.urn.ietf.params.xml.ns.netconf.base._1._0.rev110601.EditConfigInput;
@@ -272,13 +272,8 @@ public final class StressClient {
         }
 
         @Override
-        public void onRemoteSessionFailed(final Throwable throwable) {
-            LOG.info("Session failed");
-        }
-
-        @Override
         public void onNotification(final NetconfMessage notification) {
-            LOG.info("Notification received: {}", notification.toString());
+            LOG.info("Notification received: {}", notification);
         }
     }
 }

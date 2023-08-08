@@ -30,12 +30,12 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.MockitoJUnitRunner;
 import org.opendaylight.controller.config.threadpool.ScheduledThreadPool;
-import org.opendaylight.netconf.api.capability.BasicCapability;
-import org.opendaylight.netconf.api.capability.Capability;
-import org.opendaylight.netconf.api.monitoring.NetconfManagementSession;
-import org.opendaylight.netconf.api.monitoring.NetconfMonitoringService;
-import org.opendaylight.netconf.api.monitoring.SessionEvent;
-import org.opendaylight.netconf.notifications.BaseNotificationPublisherRegistration;
+import org.opendaylight.netconf.server.api.monitoring.BasicCapability;
+import org.opendaylight.netconf.server.api.monitoring.Capability;
+import org.opendaylight.netconf.server.api.monitoring.NetconfManagementSession;
+import org.opendaylight.netconf.server.api.monitoring.NetconfMonitoringService;
+import org.opendaylight.netconf.server.api.monitoring.SessionEvent;
+import org.opendaylight.netconf.server.api.notifications.BaseNotificationPublisherRegistration;
 import org.opendaylight.yang.gen.v1.urn.ietf.params.xml.ns.yang.ietf.inet.types.rev130715.Host;
 import org.opendaylight.yang.gen.v1.urn.ietf.params.xml.ns.yang.ietf.inet.types.rev130715.IpAddress;
 import org.opendaylight.yang.gen.v1.urn.ietf.params.xml.ns.yang.ietf.inet.types.rev130715.Ipv4Address;
@@ -91,7 +91,7 @@ public class NetconfSessionMonitoringServiceTest {
     @Test
     public void testClose() {
         monitoringService.onSessionUp(sessionMock1);
-        assertEquals(1, monitoringService.getSessions().getSession().size());
+        assertEquals(1, monitoringService.getSessions().nonnullSession().size());
         monitoringService.close();
         assertNull(monitoringService.getSessions().getSession());
     }

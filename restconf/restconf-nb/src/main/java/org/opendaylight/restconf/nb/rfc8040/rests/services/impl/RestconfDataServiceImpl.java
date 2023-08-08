@@ -16,6 +16,7 @@ import static org.opendaylight.restconf.nb.rfc8040.rests.utils.RestconfStreamsCo
 import static org.opendaylight.restconf.nb.rfc8040.rests.utils.RestconfStreamsConstants.STREAM_PATH_PART;
 
 import com.google.common.annotations.VisibleForTesting;
+import com.google.common.util.concurrent.FutureCallback;
 import com.google.common.util.concurrent.Futures;
 import com.google.common.util.concurrent.MoreExecutors;
 import java.net.URI;
@@ -25,10 +26,21 @@ import java.time.format.DateTimeFormatter;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 import java.util.concurrent.CancellationException;
 import java.util.concurrent.ExecutionException;
+import javax.ws.rs.Consumes;
+import javax.ws.rs.DELETE;
+import javax.ws.rs.Encoded;
+import javax.ws.rs.GET;
+import javax.ws.rs.POST;
+import javax.ws.rs.PUT;
 import javax.ws.rs.Path;
+import javax.ws.rs.PathParam;
+import javax.ws.rs.Produces;
+import javax.ws.rs.container.AsyncResponse;
+import javax.ws.rs.container.Suspended;
+import javax.ws.rs.core.Context;
+import javax.ws.rs.core.MediaType;
 import javax.ws.rs.core.Response;
 import javax.ws.rs.core.Response.Status;
 import javax.ws.rs.core.UriInfo;
@@ -39,36 +51,37 @@ import org.opendaylight.mdsal.dom.api.DOMActionService;
 import org.opendaylight.mdsal.dom.api.DOMDataBroker;
 import org.opendaylight.mdsal.dom.api.DOMDataTreeIdentifier;
 import org.opendaylight.mdsal.dom.api.DOMDataTreeWriteOperations;
-import org.opendaylight.mdsal.dom.api.DOMDataTreeWriteTransaction;
 import org.opendaylight.mdsal.dom.api.DOMMountPoint;
 import org.opendaylight.mdsal.dom.api.DOMMountPointService;
 import org.opendaylight.mdsal.dom.spi.SimpleDOMActionResult;
 import org.opendaylight.restconf.common.context.InstanceIdentifierContext;
 import org.opendaylight.restconf.common.errors.RestconfDocumentedException;
+import org.opendaylight.restconf.common.patch.Patch;
 import org.opendaylight.restconf.common.patch.PatchContext;
 import org.opendaylight.restconf.common.patch.PatchStatusContext;
+import org.opendaylight.restconf.nb.rfc8040.MediaTypes;
 import org.opendaylight.restconf.nb.rfc8040.ReadDataParams;
-import org.opendaylight.restconf.nb.rfc8040.Rfc8040;
 import org.opendaylight.restconf.nb.rfc8040.WriteDataParams;
 import org.opendaylight.restconf.nb.rfc8040.databind.DatabindProvider;
 import org.opendaylight.restconf.nb.rfc8040.databind.jaxrs.QueryParams;
 import org.opendaylight.restconf.nb.rfc8040.legacy.NormalizedNodePayload;
 import org.opendaylight.restconf.nb.rfc8040.legacy.QueryParameters;
-import org.opendaylight.restconf.nb.rfc8040.rests.services.api.RestconfDataService;
+import org.opendaylight.restconf.nb.rfc8040.monitoring.RestconfStateStreams;
 import org.opendaylight.restconf.nb.rfc8040.rests.services.api.RestconfStreamsSubscriptionService;
 import org.opendaylight.restconf.nb.rfc8040.rests.transactions.MdsalRestconfStrategy;
 import org.opendaylight.restconf.nb.rfc8040.rests.transactions.RestconfStrategy;
-import org.opendaylight.restconf.nb.rfc8040.rests.utils.DeleteDataTransactionUtil;
 import org.opendaylight.restconf.nb.rfc8040.rests.utils.PatchDataTransactionUtil;
-import org.opendaylight.restconf.nb.rfc8040.rests.utils.PlainPatchDataTransactionUtil;
 import org.opendaylight.restconf.nb.rfc8040.rests.utils.PostDataTransactionUtil;
 import org.opendaylight.restconf.nb.rfc8040.rests.utils.PutDataTransactionUtil;
 import org.opendaylight.restconf.nb.rfc8040.rests.utils.ReadDataTransactionUtil;
+import org.opendaylight.restconf.nb.rfc8040.rests.utils.RestconfStreamsConstants;
 import org.opendaylight.restconf.nb.rfc8040.streams.StreamsConfiguration;
+import org.opendaylight.restconf.nb.rfc8040.streams.listeners.ListenersBroker;
 import org.opendaylight.restconf.nb.rfc8040.streams.listeners.NotificationListenerAdapter;
-import org.opendaylight.restconf.nb.rfc8040.utils.mapping.RestconfMappingNodeUtil;
 import org.opendaylight.restconf.nb.rfc8040.utils.parser.ParserIdentifier;
+import org.opendaylight.yang.gen.v1.urn.ietf.params.xml.ns.yang.ietf.restconf.rev170126.restconf.restconf.Data;
 import org.opendaylight.yang.gen.v1.urn.sal.restconf.event.subscription.rev140708.NotificationOutputTypeGrouping.NotificationOutputType;
+import org.opendaylight.yangtools.yang.common.Empty;
 import org.opendaylight.yangtools.yang.common.ErrorTag;
 import org.opendaylight.yangtools.yang.common.ErrorType;
 import org.opendaylight.yangtools.yang.common.QName;
@@ -83,21 +96,20 @@ import org.opendaylight.yangtools.yang.data.api.schema.NormalizedNode;
 import org.opendaylight.yangtools.yang.model.api.ActionDefinition;
 import org.opendaylight.yangtools.yang.model.api.EffectiveModelContext;
 import org.opendaylight.yangtools.yang.model.api.ListSchemaNode;
-import org.opendaylight.yangtools.yang.model.api.NotificationDefinition;
-import org.opendaylight.yangtools.yang.model.api.SchemaContext;
 import org.opendaylight.yangtools.yang.model.api.SchemaNode;
+import org.opendaylight.yangtools.yang.model.api.stmt.NotificationEffectiveStatement;
 import org.opendaylight.yangtools.yang.model.api.stmt.SchemaNodeIdentifier.Absolute;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * Implementation of {@link RestconfDataService}.
+ * The "{+restconf}/data" subtree represents the datastore resource type, which is a collection of configuration data
+ * and state data nodes.
  */
 @Path("/")
-public class RestconfDataServiceImpl implements RestconfDataService {
+public final class RestconfDataServiceImpl {
     private static final Logger LOG = LoggerFactory.getLogger(RestconfDataServiceImpl.class);
     private static final DateTimeFormatter FORMATTER = DateTimeFormatter.ofPattern("yyyy-MMM-dd HH:mm:ss");
-    private static final QName NETCONF_BASE_QNAME = SchemaContext.NAME;
 
     private final RestconfStreamsSubscriptionService delegRestconfSubscrService;
     private final DatabindProvider databindProvider;
@@ -121,19 +133,49 @@ public class RestconfDataServiceImpl implements RestconfDataService {
                 : SubscribeToStreamUtil.webSockets();
     }
 
-    @Override
-    public Response readData(final UriInfo uriInfo) {
+    /**
+     * Get target data resource from data root.
+     *
+     * @param uriInfo URI info
+     * @return {@link NormalizedNodePayload}
+     */
+    @GET
+    @Path("/data")
+    @Produces({
+        MediaTypes.APPLICATION_YANG_DATA_JSON,
+        MediaTypes.APPLICATION_YANG_DATA_XML,
+        MediaType.APPLICATION_JSON,
+        MediaType.APPLICATION_XML,
+        MediaType.TEXT_XML
+    })
+    public Response readData(@Context final UriInfo uriInfo) {
         return readData(null, uriInfo);
     }
 
-    @Override
-    public Response readData(final String identifier, final UriInfo uriInfo) {
+    /**
+     * Get target data resource.
+     *
+     * @param identifier path to target
+     * @param uriInfo URI info
+     * @return {@link NormalizedNodePayload}
+     */
+    @GET
+    @Path("/data/{identifier:.+}")
+    @Produces({
+        MediaTypes.APPLICATION_YANG_DATA_JSON,
+        MediaTypes.APPLICATION_YANG_DATA_XML,
+        MediaType.APPLICATION_JSON,
+        MediaType.APPLICATION_XML,
+        MediaType.TEXT_XML
+    })
+    public Response readData(@Encoded @PathParam("identifier") final String identifier,
+            @Context final UriInfo uriInfo) {
         final ReadDataParams readParams = QueryParams.newReadDataParams(uriInfo);
 
         final EffectiveModelContext schemaContextRef = databindProvider.currentContext().modelContext();
         // FIXME: go through
         final InstanceIdentifierContext instanceIdentifier = ParserIdentifier.toInstanceIdentifier(
-                identifier, schemaContextRef, Optional.of(mountPointService));
+                identifier, schemaContextRef, mountPointService);
         final DOMMountPoint mountPoint = instanceIdentifier.getMountPoint();
 
         // FIXME: this looks quite crazy, why do we even have it?
@@ -169,7 +211,7 @@ public class RestconfDataServiceImpl implements RestconfDataService {
 
         return switch (readParams.content()) {
             case ALL, CONFIG -> {
-                final QName type = node.getIdentifier().getNodeType();
+                final QName type = node.name().getNodeType();
                 yield Response.status(Status.OK)
                     .entity(NormalizedNodePayload.ofReadData(instanceIdentifier, node, queryParams))
                     .header("ETag", '"' + type.getModule().getRevision().map(Revision::toString).orElse(null) + "-"
@@ -184,15 +226,21 @@ public class RestconfDataServiceImpl implements RestconfDataService {
     }
 
     private void createAllYangNotificationStreams(final EffectiveModelContext schemaContext, final UriInfo uriInfo) {
-        final DOMDataTreeWriteTransaction transaction = dataBroker.newWriteOnlyTransaction();
-        for (final NotificationDefinition notificationDefinition : schemaContext.getNotifications()) {
-            writeNotificationStreamToDatastore(schemaContext, uriInfo, transaction,
-                CreateStreamUtil.createYangNotifiStream(notificationDefinition, schemaContext,
-                    NotificationOutputType.XML));
-            writeNotificationStreamToDatastore(schemaContext, uriInfo, transaction,
-                CreateStreamUtil.createYangNotifiStream(notificationDefinition, schemaContext,
-                    NotificationOutputType.JSON));
+        final var transaction = dataBroker.newWriteOnlyTransaction();
+
+        for (var module : schemaContext.getModuleStatements().values()) {
+            final var moduleName = module.argument().getLocalName();
+            // Note: this handles only RFC6020 notifications
+            module.streamEffectiveSubstatements(NotificationEffectiveStatement.class).forEach(notification -> {
+                final var notifName = notification.argument();
+
+                writeNotificationStreamToDatastore(schemaContext, uriInfo, transaction,
+                    createYangNotifiStream(moduleName, notifName, NotificationOutputType.XML));
+                writeNotificationStreamToDatastore(schemaContext, uriInfo, transaction,
+                    createYangNotifiStream(moduleName, notifName, NotificationOutputType.JSON));
+            });
         }
+
         try {
             transaction.commit().get();
         } catch (final InterruptedException | ExecutionException e) {
@@ -200,40 +248,109 @@ public class RestconfDataServiceImpl implements RestconfDataService {
         }
     }
 
+    private static NotificationListenerAdapter createYangNotifiStream(final String moduleName, final QName notifName,
+            final NotificationOutputType outputType) {
+        final var streamName = createNotificationStreamName(moduleName, notifName.getLocalName(), outputType);
+        final var listenersBroker = ListenersBroker.getInstance();
+
+        final var existing = listenersBroker.notificationListenerFor(streamName);
+        return existing != null ? existing
+            : listenersBroker.registerNotificationListener(Absolute.of(notifName), streamName, outputType);
+    }
+
+    private static String createNotificationStreamName(final String moduleName, final String notifName,
+            final NotificationOutputType outputType) {
+        final var sb = new StringBuilder()
+            .append(RestconfStreamsConstants.NOTIFICATION_STREAM)
+            .append('/').append(moduleName).append(':').append(notifName);
+        if (outputType != NotificationOutputType.XML) {
+            sb.append('/').append(outputType.getName());
+        }
+        return sb.toString();
+    }
+
     private void writeNotificationStreamToDatastore(final EffectiveModelContext schemaContext,
             final UriInfo uriInfo, final DOMDataTreeWriteOperations tx, final NotificationListenerAdapter listener) {
         final URI uri = streamUtils.prepareUriByStreamName(uriInfo, listener.getStreamName());
-        final MapEntryNode mapToStreams = RestconfMappingNodeUtil.mapYangNotificationStreamByIetfRestconfMonitoring(
-                listener.getSchemaPath().lastNodeIdentifier(), schemaContext.getNotifications(), null,
-                listener.getOutputType(), uri);
+        final MapEntryNode mapToStreams = RestconfStateStreams.notificationStreamEntry(schemaContext,
+                listener.getSchemaPath().lastNodeIdentifier(), null, listener.getOutputType(), uri);
 
         tx.merge(LogicalDatastoreType.OPERATIONAL,
-            Rfc8040.restconfStateStreamPath(mapToStreams.getIdentifier()), mapToStreams);
+            RestconfStateStreams.restconfStateStreamPath(mapToStreams.name()), mapToStreams);
     }
 
-    @Override
-    public Response putData(final String identifier, final NormalizedNodePayload payload, final UriInfo uriInfo) {
+    /**
+     * Create or replace the target data resource.
+     *
+     * @param identifier path to target
+     * @param payload data node for put to config DS
+     * @return {@link Response}
+     */
+    @PUT
+    @Path("/data/{identifier:.+}")
+    @Consumes({
+        MediaTypes.APPLICATION_YANG_DATA_JSON,
+        MediaTypes.APPLICATION_YANG_DATA_XML,
+        MediaType.APPLICATION_JSON,
+        MediaType.APPLICATION_XML,
+        MediaType.TEXT_XML
+    })
+    public Response putData(@Encoded @PathParam("identifier") final String identifier,
+            final NormalizedNodePayload payload, @Context final UriInfo uriInfo) {
         requireNonNull(payload);
 
         final WriteDataParams params = QueryParams.newWriteDataParams(uriInfo);
 
         final InstanceIdentifierContext iid = payload.getInstanceIdentifierContext();
+        final YangInstanceIdentifier path = iid.getInstanceIdentifier();
 
         validInputData(iid.getSchemaNode() != null, payload);
-        validTopLevelNodeName(iid.getInstanceIdentifier(), payload);
+        validTopLevelNodeName(path, payload);
         validateListKeysEqualityInPayloadAndUri(payload);
 
         final RestconfStrategy strategy = getRestconfStrategy(iid.getMountPoint());
-        return PutDataTransactionUtil.putData(payload, iid.getSchemaContext(), strategy, params);
+        return PutDataTransactionUtil.putData(path, payload.getData(), iid.getSchemaContext(), strategy, params);
     }
 
-    @Override
-    public Response postData(final String identifier, final NormalizedNodePayload payload, final UriInfo uriInfo) {
+    /**
+     * Create a data resource in target.
+     *
+     * @param identifier path to target
+     * @param payload new data
+     * @param uriInfo URI info
+     * @return {@link Response}
+     */
+    @POST
+    @Path("/data/{identifier:.+}")
+    @Consumes({
+        MediaTypes.APPLICATION_YANG_DATA_JSON,
+        MediaTypes.APPLICATION_YANG_DATA_XML,
+        MediaType.APPLICATION_JSON,
+        MediaType.APPLICATION_XML,
+        MediaType.TEXT_XML
+    })
+    public Response postData(@Encoded @PathParam("identifier") final String identifier,
+            final NormalizedNodePayload payload, @Context final UriInfo uriInfo) {
         return postData(payload, uriInfo);
     }
 
-    @Override
-    public Response postData(final NormalizedNodePayload payload, final UriInfo uriInfo) {
+    /**
+     * Create a data resource.
+     *
+     * @param payload new data
+     * @param uriInfo URI info
+     * @return {@link Response}
+     */
+    @POST
+    @Path("/data")
+    @Consumes({
+        MediaTypes.APPLICATION_YANG_DATA_JSON,
+        MediaTypes.APPLICATION_YANG_DATA_XML,
+        MediaType.APPLICATION_JSON,
+        MediaType.APPLICATION_XML,
+        MediaType.TEXT_XML
+    })
+    public Response postData(final NormalizedNodePayload payload, @Context final UriInfo uriInfo) {
         requireNonNull(payload);
         final InstanceIdentifierContext iid = payload.getInstanceIdentifierContext();
         if (iid.getSchemaNode() instanceof ActionDefinition) {
@@ -242,26 +359,80 @@ public class RestconfDataServiceImpl implements RestconfDataService {
 
         final WriteDataParams params = QueryParams.newWriteDataParams(uriInfo);
         final RestconfStrategy strategy = getRestconfStrategy(iid.getMountPoint());
-        return PostDataTransactionUtil.postData(uriInfo, payload, strategy, iid.getSchemaContext(), params);
+        return PostDataTransactionUtil.postData(uriInfo, iid.getInstanceIdentifier(), payload.getData(), strategy,
+            iid.getSchemaContext(), params);
     }
 
-    @Override
-    public Response deleteData(final String identifier) {
-        final InstanceIdentifierContext instanceIdentifier = ParserIdentifier.toInstanceIdentifier(identifier,
-            databindProvider.currentContext().modelContext(), Optional.of(mountPointService));
+    /**
+     * Delete the target data resource.
+     *
+     * @param identifier path to target
+     * @param ar {@link AsyncResponse} which needs to be completed
+     */
+    @DELETE
+    @Path("/data/{identifier:.+}")
+    public void deleteData(@Encoded @PathParam("identifier") final String identifier,
+            @Suspended final AsyncResponse ar) {
+        final var instanceIdentifier = ParserIdentifier.toInstanceIdentifier(identifier,
+            databindProvider.currentContext().modelContext(), mountPointService);
+        final var strategy = getRestconfStrategy(instanceIdentifier.getMountPoint());
 
-        final DOMMountPoint mountPoint = instanceIdentifier.getMountPoint();
-        final RestconfStrategy strategy = getRestconfStrategy(mountPoint);
-        return DeleteDataTransactionUtil.deleteData(strategy, instanceIdentifier.getInstanceIdentifier());
+        Futures.addCallback(strategy.delete(instanceIdentifier.getInstanceIdentifier()), new FutureCallback<>() {
+            @Override
+            public void onSuccess(final Empty result) {
+                ar.resume(Response.noContent().build());
+            }
+
+            @Override
+            public void onFailure(final Throwable failure) {
+                ar.resume(failure);
+            }
+        }, MoreExecutors.directExecutor());
     }
 
-    @Override
-    public PatchStatusContext patchData(final String identifier, final PatchContext context, final UriInfo uriInfo) {
+    /**
+     * Ordered list of edits that are applied to the target datastore by the server.
+     *
+     * @param identifier path to target
+     * @param context edits
+     * @param uriInfo URI info
+     * @return {@link PatchStatusContext}
+     */
+    @Patch
+    @Path("/data/{identifier:.+}")
+    @Consumes({
+        MediaTypes.APPLICATION_YANG_PATCH_JSON,
+        MediaTypes.APPLICATION_YANG_PATCH_XML
+    })
+    @Produces({
+        MediaTypes.APPLICATION_YANG_DATA_JSON,
+        MediaTypes.APPLICATION_YANG_DATA_XML
+    })
+    public PatchStatusContext patchData(@Encoded @PathParam("identifier") final String identifier,
+            final PatchContext context, @Context final UriInfo uriInfo) {
         return patchData(context, uriInfo);
     }
 
-    @Override
-    public PatchStatusContext patchData(final PatchContext context, final UriInfo uriInfo) {
+    /**
+     * Ordered list of edits that are applied to the datastore by the server.
+     *
+     * @param context
+     *            edits
+     * @param uriInfo
+     *            URI info
+     * @return {@link PatchStatusContext}
+     */
+    @Patch
+    @Path("/data")
+    @Consumes({
+        MediaTypes.APPLICATION_YANG_PATCH_JSON,
+        MediaTypes.APPLICATION_YANG_PATCH_XML
+    })
+    @Produces({
+        MediaTypes.APPLICATION_YANG_DATA_JSON,
+        MediaTypes.APPLICATION_YANG_DATA_XML
+    })
+    public PatchStatusContext patchData(final PatchContext context, @Context final UriInfo uriInfo) {
         final InstanceIdentifierContext iid = RestconfDocumentedException.throwIfNull(context,
             ErrorType.PROTOCOL, ErrorTag.MALFORMED_MESSAGE, "No patch documented provided")
             .getInstanceIdentifierContext();
@@ -269,21 +440,46 @@ public class RestconfDataServiceImpl implements RestconfDataService {
         return PatchDataTransactionUtil.patchData(context, strategy, iid.getSchemaContext());
     }
 
-    @Override
-    public Response patchData(final String identifier, final NormalizedNodePayload payload, final UriInfo uriInfo) {
-        requireNonNull(payload);
-
+    /**
+     * Partially modify the target data resource.
+     *
+     * @param identifier path to target
+     * @param payload data node for put to config DS
+     * @param ar {@link AsyncResponse} which needs to be completed
+     */
+    @Patch
+    @Path("/data/{identifier:.+}")
+    @Consumes({
+        MediaTypes.APPLICATION_YANG_DATA_JSON,
+        MediaTypes.APPLICATION_YANG_DATA_XML,
+        MediaType.APPLICATION_JSON,
+        MediaType.APPLICATION_XML,
+        MediaType.TEXT_XML
+    })
+    public void patchData(@Encoded @PathParam("identifier") final String identifier,
+            final NormalizedNodePayload payload, @Context final UriInfo uriInfo, @Suspended final AsyncResponse ar) {
         final InstanceIdentifierContext iid = payload.getInstanceIdentifierContext();
+        final YangInstanceIdentifier path = iid.getInstanceIdentifier();
         validInputData(iid.getSchemaNode() != null, payload);
-        validTopLevelNodeName(iid.getInstanceIdentifier(), payload);
+        validTopLevelNodeName(path, payload);
         validateListKeysEqualityInPayloadAndUri(payload);
+        final var strategy = getRestconfStrategy(iid.getMountPoint());
 
-        final RestconfStrategy strategy = getRestconfStrategy(iid.getMountPoint());
-        return PlainPatchDataTransactionUtil.patchData(payload, strategy, iid.getSchemaContext());
+        Futures.addCallback(strategy.merge(path, payload.getData(), iid.getSchemaContext()), new FutureCallback<>() {
+            @Override
+            public void onSuccess(final Empty result) {
+                ar.resume(Response.ok().build());
+            }
+
+            @Override
+            public void onFailure(final Throwable failure) {
+                ar.resume(failure);
+            }
+        }, MoreExecutors.directExecutor());
     }
 
-    // FIXME: why is this synchronized?
-    public synchronized RestconfStrategy getRestconfStrategy(final DOMMountPoint mountPoint) {
+    @VisibleForTesting
+    RestconfStrategy getRestconfStrategy(final DOMMountPoint mountPoint) {
         if (mountPoint == null) {
             return restconfStrategy;
         }
@@ -306,7 +502,7 @@ public class RestconfDataServiceImpl implements RestconfDataService {
         final YangInstanceIdentifier yangIIdContext = context.getInstanceIdentifier();
         final NormalizedNode data = payload.getData();
 
-        if (yangIIdContext.isEmpty() && !NETCONF_BASE_QNAME.equals(data.getIdentifier().getNodeType())) {
+        if (yangIIdContext.isEmpty() && !Data.QNAME.equals(data.name().getNodeType())) {
             throw new RestconfDocumentedException("Instance identifier need to contain at least one path argument",
                 ErrorType.PROTOCOL, ErrorTag.MALFORMED_MESSAGE);
         }
@@ -400,7 +596,7 @@ public class RestconfDataServiceImpl implements RestconfDataService {
      * @param payload    input data
      */
     @VisibleForTesting
-    public static void validInputData(final boolean haveSchemaNode, final NormalizedNodePayload payload) {
+    static void validInputData(final boolean haveSchemaNode, final NormalizedNodePayload payload) {
         final boolean haveData = payload.getData() != null;
         if (haveSchemaNode) {
             if (!haveData) {
@@ -419,10 +615,10 @@ public class RestconfDataServiceImpl implements RestconfDataService {
      * @param payload data
      */
     @VisibleForTesting
-    public static void validTopLevelNodeName(final YangInstanceIdentifier path, final NormalizedNodePayload payload) {
-        final QName dataNodeType = payload.getData().getIdentifier().getNodeType();
+    static void validTopLevelNodeName(final YangInstanceIdentifier path, final NormalizedNodePayload payload) {
+        final QName dataNodeType = payload.getData().name().getNodeType();
         if (path.isEmpty()) {
-            if (!NETCONF_BASE_QNAME.equals(dataNodeType)) {
+            if (!Data.QNAME.equals(dataNodeType)) {
                 throw new RestconfDocumentedException("Instance identifier has to contain at least one path argument",
                         ErrorType.PROTOCOL, ErrorTag.MALFORMED_MESSAGE);
             }
@@ -437,7 +633,6 @@ public class RestconfDataServiceImpl implements RestconfDataService {
         }
     }
 
-
     /**
      * Validates whether keys in {@code payload} are equal to values of keys in
      * {@code iiWithData} for list schema node.
@@ -445,13 +640,13 @@ public class RestconfDataServiceImpl implements RestconfDataService {
      * @throws RestconfDocumentedException if key values or key count in payload and URI isn't equal
      */
     @VisibleForTesting
-    public static void validateListKeysEqualityInPayloadAndUri(final NormalizedNodePayload payload) {
+    static void validateListKeysEqualityInPayloadAndUri(final NormalizedNodePayload payload) {
         final InstanceIdentifierContext iiWithData = payload.getInstanceIdentifierContext();
         final PathArgument lastPathArgument = iiWithData.getInstanceIdentifier().getLastPathArgument();
         final SchemaNode schemaNode = iiWithData.getSchemaNode();
         final NormalizedNode data = payload.getData();
-        if (schemaNode instanceof ListSchemaNode) {
-            final List<QName> keyDefinitions = ((ListSchemaNode) schemaNode).getKeyDefinition();
+        if (schemaNode instanceof ListSchemaNode listSchema) {
+            final var keyDefinitions = listSchema.getKeyDefinition();
             if (lastPathArgument instanceof NodeIdentifierWithPredicates && data instanceof MapEntryNode) {
                 final Map<QName, Object> uriKeyValues = ((NodeIdentifierWithPredicates) lastPathArgument).asMap();
                 isEqualUriAndPayloadKeyValues(uriKeyValues, (MapEntryNode) data, keyDefinitions);
@@ -467,7 +662,7 @@ public class RestconfDataServiceImpl implements RestconfDataService {
                     mutableCopyUriKeyValues.remove(keyDefinition), ErrorType.PROTOCOL, ErrorTag.DATA_MISSING,
                     "Missing key %s in URI.", keyDefinition);
 
-            final Object dataKeyValue = payload.getIdentifier().getValue(keyDefinition);
+            final Object dataKeyValue = payload.name().getValue(keyDefinition);
 
             if (!uriKeyValue.equals(dataKeyValue)) {
                 final String errMsg = "The value '" + uriKeyValue + "' for key '" + keyDefinition.getLocalName()

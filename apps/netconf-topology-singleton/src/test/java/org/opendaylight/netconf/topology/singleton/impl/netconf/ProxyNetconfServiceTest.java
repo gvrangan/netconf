@@ -31,7 +31,7 @@ import org.junit.Test;
 import org.opendaylight.mdsal.common.api.LogicalDatastoreType;
 import org.opendaylight.mdsal.common.api.ReadFailedException;
 import org.opendaylight.netconf.api.DocumentedException;
-import org.opendaylight.netconf.sal.connect.api.RemoteDeviceId;
+import org.opendaylight.netconf.client.mdsal.api.RemoteDeviceId;
 import org.opendaylight.netconf.topology.singleton.messages.NormalizedNodeMessage;
 import org.opendaylight.netconf.topology.singleton.messages.netconf.CommitRequest;
 import org.opendaylight.netconf.topology.singleton.messages.netconf.CreateEditConfigRequest;
@@ -58,7 +58,7 @@ import org.opendaylight.yangtools.yang.data.impl.schema.Builders;
 public class ProxyNetconfServiceTest {
     private static final RemoteDeviceId DEVICE_ID =
         new RemoteDeviceId("dev1", InetSocketAddress.createUnresolved("localhost", 17830));
-    private static final YangInstanceIdentifier PATH = YangInstanceIdentifier.empty();
+    private static final YangInstanceIdentifier PATH = YangInstanceIdentifier.of();
     private static final LogicalDatastoreType STORE = LogicalDatastoreType.CONFIGURATION;
 
     private static ActorSystem system = ActorSystem.apply();

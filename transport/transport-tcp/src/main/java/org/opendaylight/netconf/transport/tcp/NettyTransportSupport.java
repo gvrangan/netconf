@@ -19,7 +19,7 @@ import io.netty.channel.socket.SocketChannel;
 import org.eclipse.jdt.annotation.NonNullByDefault;
 import org.eclipse.jdt.annotation.Nullable;
 import org.opendaylight.netconf.transport.api.UnsupportedConfigurationException;
-import org.opendaylight.yang.gen.v1.urn.ietf.params.xml.ns.yang.ietf.tcp.common.rev221212.tcp.common.grouping.Keepalives;
+import org.opendaylight.yang.gen.v1.urn.ietf.params.xml.ns.yang.ietf.tcp.common.rev230417.tcp.common.grouping.Keepalives;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -30,7 +30,7 @@ import org.slf4j.LoggerFactory;
 @NonNullByDefault
 public final class NettyTransportSupport {
     private static final Logger LOG = LoggerFactory.getLogger(NettyTransportSupport.class);
-    private static final AbstractNettyImpl IMPL = Epoll.isAvailable() ? new EpollNettyImpl() : new NioNettyImpl();
+    private static final AbstractNettyImpl IMPL = Epoll.isAvailable() ? new EpollNettyImpl() : NioNettyImpl.INSTANCE;
 
     static {
         LOG.info("Netty transport backed by {}", IMPL);

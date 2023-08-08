@@ -23,15 +23,16 @@ import static org.opendaylight.mdsal.binding.api.DataObjectModification.Modifica
 import static org.opendaylight.mdsal.binding.api.DataObjectModification.ModificationType.SUBTREE_MODIFIED;
 import static org.opendaylight.mdsal.binding.api.DataObjectModification.ModificationType.WRITE;
 
+import akka.actor.ActorSystem;
 import akka.util.Timeout;
-import com.google.common.collect.ImmutableSet;
 import io.netty.util.concurrent.EventExecutor;
-import java.util.Arrays;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.ExecutorService;
+import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Function;
 import org.junit.Before;
@@ -41,9 +42,6 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.MockitoJUnitRunner;
 import org.opendaylight.aaa.encrypt.AAAEncryptionService;
-import org.opendaylight.controller.cluster.ActorSystemProvider;
-import org.opendaylight.controller.config.threadpool.ScheduledThreadPool;
-import org.opendaylight.controller.config.threadpool.ThreadPool;
 import org.opendaylight.mdsal.binding.api.DataBroker;
 import org.opendaylight.mdsal.binding.api.DataObjectModification;
 import org.opendaylight.mdsal.binding.api.DataTreeIdentifier;
@@ -51,30 +49,26 @@ import org.opendaylight.mdsal.binding.api.DataTreeModification;
 import org.opendaylight.mdsal.binding.api.ReadTransaction;
 import org.opendaylight.mdsal.binding.api.RpcProviderService;
 import org.opendaylight.mdsal.binding.dom.adapter.test.AbstractDataBrokerTest;
-import org.opendaylight.mdsal.binding.spec.reflect.BindingReflections;
+import org.opendaylight.mdsal.binding.runtime.spi.BindingRuntimeHelpers;
 import org.opendaylight.mdsal.common.api.LogicalDatastoreType;
-import org.opendaylight.mdsal.dom.api.DOMActionProviderService;
 import org.opendaylight.mdsal.dom.api.DOMMountPointService;
-import org.opendaylight.mdsal.dom.api.DOMRpcProviderService;
 import org.opendaylight.mdsal.singleton.common.api.ClusterSingletonServiceProvider;
 import org.opendaylight.mdsal.singleton.common.api.ClusterSingletonServiceRegistration;
 import org.opendaylight.mdsal.singleton.common.api.ServiceGroupIdentifier;
 import org.opendaylight.netconf.client.NetconfClientDispatcher;
-import org.opendaylight.netconf.sal.connect.api.DeviceActionFactory;
-import org.opendaylight.netconf.sal.connect.impl.DefaultSchemaResourceManager;
+import org.opendaylight.netconf.client.mdsal.api.DeviceActionFactory;
+import org.opendaylight.netconf.client.mdsal.impl.DefaultSchemaResourceManager;
 import org.opendaylight.netconf.topology.singleton.impl.utils.NetconfTopologySetup;
 import org.opendaylight.netconf.topology.singleton.impl.utils.NetconfTopologyUtils;
+import org.opendaylight.netconf.topology.spi.NetconfClientConfigurationBuilderFactory;
 import org.opendaylight.yang.gen.v1.urn.ietf.params.xml.ns.yang.ietf.inet.types.rev130715.Host;
 import org.opendaylight.yang.gen.v1.urn.ietf.params.xml.ns.yang.ietf.inet.types.rev130715.IpAddress;
 import org.opendaylight.yang.gen.v1.urn.ietf.params.xml.ns.yang.ietf.inet.types.rev130715.Ipv4Address;
 import org.opendaylight.yang.gen.v1.urn.ietf.params.xml.ns.yang.ietf.inet.types.rev130715.PortNumber;
 import org.opendaylight.yang.gen.v1.urn.opendaylight.netconf.node.topology.rev221225.NetconfNode;
 import org.opendaylight.yang.gen.v1.urn.opendaylight.netconf.node.topology.rev221225.NetconfNodeBuilder;
-import org.opendaylight.yang.gen.v1.urn.opendaylight.netconf.topology.singleton.config.rev170419.Config;
-import org.opendaylight.yang.gen.v1.urn.opendaylight.netconf.topology.singleton.config.rev170419.ConfigBuilder;
 import org.opendaylight.yang.gen.v1.urn.tbd.params.xml.ns.yang.network.topology.rev131021.NetworkTopology;
 import org.opendaylight.yang.gen.v1.urn.tbd.params.xml.ns.yang.network.topology.rev131021.NodeId;
-import org.opendaylight.yang.gen.v1.urn.tbd.params.xml.ns.yang.network.topology.rev131021.network.topology.Topology;
 import org.opendaylight.yang.gen.v1.urn.tbd.params.xml.ns.yang.network.topology.rev131021.network.topology.topology.Node;
 import org.opendaylight.yang.gen.v1.urn.tbd.params.xml.ns.yang.network.topology.rev131021.network.topology.topology.NodeBuilder;
 import org.opendaylight.yang.gen.v1.urn.tbd.params.xml.ns.yang.network.topology.rev131021.network.topology.topology.NodeKey;
@@ -107,34 +101,33 @@ public class NetconfTopologyManagerTest extends AbstractBaseSchemasTest {
         AbstractDataBrokerTest dataBrokerTest = new AbstractDataBrokerTest() {
             @Override
             protected Set<YangModuleInfo> getModuleInfos() throws Exception {
-                return ImmutableSet.of(BindingReflections.getModuleInfo(NetworkTopology.class),
-                        BindingReflections.getModuleInfo(Topology.class));
+                return Set.of(BindingRuntimeHelpers.getYangModuleInfo(NetworkTopology.class));
             }
         };
 
         dataBrokerTest.setup();
         dataBroker = spy(dataBrokerTest.getDataBroker());
 
-        final DOMRpcProviderService rpcProviderRegistry = mock(DOMRpcProviderService.class);
-        final ScheduledThreadPool keepaliveExecutor = mock(ScheduledThreadPool.class);
-        final DOMActionProviderService actionProviderRegistry = mock(DOMActionProviderService.class);
-        final ThreadPool processingThreadPool = mock(ThreadPool.class);
+        final ScheduledExecutorService keepaliveExecutor = mock(ScheduledExecutorService.class);
         final ExecutorService processingService = mock(ExecutorService.class);
-        doReturn(processingService).when(processingThreadPool).getExecutor();
-        final ActorSystemProvider actorSystemProvider = mock(ActorSystemProvider.class);
+        final ActorSystem actorSystem = mock(ActorSystem.class);
         final EventExecutor eventExecutor = mock(EventExecutor.class);
         final NetconfClientDispatcher clientDispatcher = mock(NetconfClientDispatcher.class);
         final DOMMountPointService mountPointService = mock(DOMMountPointService.class);
         final AAAEncryptionService encryptionService = mock(AAAEncryptionService.class);
         final DeviceActionFactory deviceActionFactory = mock(DeviceActionFactory.class);
         final RpcProviderService rpcProviderService = mock(RpcProviderService.class);
+        final NetconfClientConfigurationBuilderFactory builderFactory =
+            mock(NetconfClientConfigurationBuilderFactory.class);
 
-        final Config config = new ConfigBuilder().setWriteTransactionIdleTimeout(Uint16.ZERO).build();
-        netconfTopologyManager = new NetconfTopologyManager(BASE_SCHEMAS, dataBroker, rpcProviderRegistry,
-                actionProviderRegistry, clusterSingletonServiceProvider, keepaliveExecutor, processingThreadPool,
-                actorSystemProvider, eventExecutor, clientDispatcher, TOPOLOGY_ID, config,
+        doNothing().when(mockListenerReg).close();
+        doReturn(mockListenerReg).when(dataBroker).registerDataTreeChangeListener(any(), any());
+
+        netconfTopologyManager = new NetconfTopologyManager(BASE_SCHEMAS, dataBroker, clusterSingletonServiceProvider,
+                keepaliveExecutor, processingService, actorSystem, eventExecutor, clientDispatcher,
                 mountPointService, encryptionService, rpcProviderService, deviceActionFactory,
-                new DefaultSchemaResourceManager(new DefaultYangParserFactory())) {
+                new DefaultSchemaResourceManager(new DefaultYangParserFactory()), builderFactory,
+                TOPOLOGY_ID, Uint16.ZERO) {
             @Override
             protected NetconfTopologyContext newNetconfTopologyContext(final NetconfTopologySetup setup,
                 final ServiceGroupIdentifier serviceGroupIdent, final Timeout actorResponseWaitTime,
@@ -144,16 +137,10 @@ public class NetconfTopologyManagerTest extends AbstractBaseSchemasTest {
                         "No mock context for " + setup.getInstanceIdentifier()).apply(setup);
             }
         };
-
-        doNothing().when(mockListenerReg).close();
-        doReturn(mockListenerReg).when(dataBroker).registerDataTreeChangeListener(any(), any());
     }
 
     @Test
     public void testRegisterDataTreeChangeListener() throws Exception {
-
-        netconfTopologyManager.init();
-
         await().atMost(5, TimeUnit.SECONDS).until(() -> {
             try (ReadTransaction readTx = dataBroker.newReadOnlyTransaction()) {
                 return readTx.exists(LogicalDatastoreType.OPERATIONAL,
@@ -176,10 +163,8 @@ public class NetconfTopologyManagerTest extends AbstractBaseSchemasTest {
 
     @SuppressWarnings("unchecked")
     @Test
-    public void testOnDataTreeChanged() throws Exception {
-
+    public void testOnDataTreeChanged() {
         // Notify of 2 created Node objects.
-
         final NodeId nodeId1 = new NodeId("node-id-1");
         final InstanceIdentifier<Node> nodeInstanceId1 = NetconfTopologyUtils.createTopologyNodeListPath(
                 new NodeKey(nodeId1), TOPOLOGY_ID);
@@ -236,7 +221,7 @@ public class NetconfTopologyManagerTest extends AbstractBaseSchemasTest {
         doReturn(mockClusterRegistration2).when(clusterSingletonServiceProvider)
                 .registerClusterSingletonService(mockContext2);
 
-        netconfTopologyManager.onDataTreeChanged(Arrays.asList(
+        netconfTopologyManager.onDataTreeChanged(List.of(
                 new CustomTreeModification(DataTreeIdentifier.create(LogicalDatastoreType.CONFIGURATION,
                         nodeInstanceId1), dataObjectModification1),
                 new CustomTreeModification(DataTreeIdentifier.create(LogicalDatastoreType.CONFIGURATION,
@@ -246,7 +231,6 @@ public class NetconfTopologyManagerTest extends AbstractBaseSchemasTest {
         verify(clusterSingletonServiceProvider).registerClusterSingletonService(mockContext2);
 
         // Notify of Node 1 replaced and Node 2 subtree modified.
-
         mockContextMap.clear();
 
         final NetconfNode updatedNetconfNode1 = new NetconfNodeBuilder(netconfNode1)
@@ -262,7 +246,7 @@ public class NetconfTopologyManagerTest extends AbstractBaseSchemasTest {
         doNothing().when(mockContext1).refresh(any());
         doNothing().when(mockContext2).refresh(any());
 
-        netconfTopologyManager.onDataTreeChanged(Arrays.asList(
+        netconfTopologyManager.onDataTreeChanged(List.of(
                 new CustomTreeModification(DataTreeIdentifier.create(LogicalDatastoreType.CONFIGURATION,
                         nodeInstanceId1), dataObjectModification1),
                 new CustomTreeModification(DataTreeIdentifier.create(LogicalDatastoreType.CONFIGURATION,
@@ -277,10 +261,9 @@ public class NetconfTopologyManagerTest extends AbstractBaseSchemasTest {
         verifyNoMoreInteractions(clusterSingletonServiceProvider);
 
         // Notify of Node 1 deleted.
-
         doReturn(DELETE).when(dataObjectModification1).getModificationType();
 
-        netconfTopologyManager.onDataTreeChanged(Arrays.asList(
+        netconfTopologyManager.onDataTreeChanged(List.of(
                 new CustomTreeModification(DataTreeIdentifier.create(LogicalDatastoreType.CONFIGURATION,
                         nodeInstanceId1), dataObjectModification1)));
 
@@ -289,7 +272,6 @@ public class NetconfTopologyManagerTest extends AbstractBaseSchemasTest {
         verifyNoMoreInteractions(clusterSingletonServiceProvider, mockClusterRegistration2, mockContext2);
 
         // Notify of Node 1 created again.
-
         reset(clusterSingletonServiceProvider);
 
         final NetconfTopologyContext newMockContext1 = mock(NetconfTopologyContext.class);
@@ -308,17 +290,15 @@ public class NetconfTopologyManagerTest extends AbstractBaseSchemasTest {
             return newMockContext1;
         });
 
-        netconfTopologyManager.onDataTreeChanged(Arrays.asList(
+        netconfTopologyManager.onDataTreeChanged(List.of(
                 new CustomTreeModification(DataTreeIdentifier.create(LogicalDatastoreType.CONFIGURATION,
                         nodeInstanceId1), dataObjectModification1)));
 
         verify(clusterSingletonServiceProvider, times(2)).registerClusterSingletonService(newMockContext1);
-
         verifyNoMoreInteractions(mockClusterRegistration1, mockContext1, mockClusterRegistration2, mockContext2,
                 newMockContext1, newMockClusterRegistration1, clusterSingletonServiceProvider);
 
         // Test close.
-
         netconfTopologyManager.close();
 
         verify(newMockClusterRegistration1).close();
@@ -359,9 +339,7 @@ public class NetconfTopologyManagerTest extends AbstractBaseSchemasTest {
         doThrow(new RuntimeException("mock error")).when(clusterSingletonServiceProvider)
                 .registerClusterSingletonService(mockContext);
 
-        netconfTopologyManager.init();
-
-        netconfTopologyManager.onDataTreeChanged(Arrays.asList(
+        netconfTopologyManager.onDataTreeChanged(List.of(
                 new CustomTreeModification(DataTreeIdentifier.create(LogicalDatastoreType.CONFIGURATION,
                         nodeInstanceId), dataObjectModification)));
 

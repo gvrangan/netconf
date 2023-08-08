@@ -7,20 +7,23 @@
  */
 package org.opendaylight.netconf.server;
 
+import static java.util.Objects.requireNonNull;
+
 import com.google.common.base.Preconditions;
 import com.google.common.collect.ImmutableMap;
 import org.opendaylight.netconf.api.DocumentedException;
+import org.opendaylight.netconf.api.NamespaceURN;
 import org.opendaylight.netconf.api.NetconfMessage;
 import org.opendaylight.netconf.api.NetconfSessionListener;
 import org.opendaylight.netconf.api.NetconfTerminationReason;
-import org.opendaylight.netconf.api.monitoring.NetconfMonitoringService;
-import org.opendaylight.netconf.api.monitoring.SessionEvent;
-import org.opendaylight.netconf.api.monitoring.SessionListener;
+import org.opendaylight.netconf.api.messages.NotificationMessage;
 import org.opendaylight.netconf.api.xml.XmlNetconfConstants;
 import org.opendaylight.netconf.api.xml.XmlUtil;
-import org.opendaylight.netconf.notifications.NetconfNotification;
-import org.opendaylight.netconf.server.osgi.NetconfOperationRouter;
-import org.opendaylight.netconf.util.messages.SubtreeFilter;
+import org.opendaylight.netconf.server.api.monitoring.NetconfMonitoringService;
+import org.opendaylight.netconf.server.api.monitoring.SessionEvent;
+import org.opendaylight.netconf.server.api.monitoring.SessionListener;
+import org.opendaylight.netconf.server.osgi.NetconfOperationRouterImpl;
+import org.opendaylight.netconf.server.spi.SubtreeFilter;
 import org.opendaylight.yangtools.yang.common.ErrorSeverity;
 import org.opendaylight.yangtools.yang.common.ErrorTag;
 import org.opendaylight.yangtools.yang.common.ErrorType;
@@ -34,13 +37,12 @@ public class NetconfServerSessionListener implements NetconfSessionListener<Netc
     private static final Logger LOG = LoggerFactory.getLogger(NetconfServerSessionListener.class);
 
     private final SessionListener monitoringSessionListener;
-    private final NetconfOperationRouter operationRouter;
+    private final NetconfOperationRouterImpl operationRouter;
     private final AutoCloseable onSessionDownCloseable;
 
-    public NetconfServerSessionListener(final NetconfOperationRouter operationRouter,
-                                        final NetconfMonitoringService monitoringService,
-                                        final AutoCloseable onSessionDownCloseable) {
-        this.operationRouter = operationRouter;
+    NetconfServerSessionListener(final NetconfOperationRouterImpl operationRouter,
+            final NetconfMonitoringService monitoringService, final AutoCloseable onSessionDownCloseable) {
+        this.operationRouter = requireNonNull(operationRouter);
         monitoringSessionListener = monitoringService.getSessionListener();
         this.onSessionDownCloseable = onSessionDownCloseable;
     }
@@ -87,8 +89,7 @@ public class NetconfServerSessionListener implements NetconfSessionListener<Netc
 
             Preconditions.checkState(operationRouter != null, "Cannot handle message, session up was not yet received");
             // there is no validation since the document may contain yang schemas
-            final NetconfMessage message = processDocument(netconfMessage,
-                    session);
+            final NetconfMessage message = processDocument(netconfMessage, session);
             LOG.debug("Responding with message {}", message);
             session.sendMessage(message);
             monitoringSessionListener.onSessionEvent(SessionEvent.inRpcSuccess(session));
@@ -108,7 +109,14 @@ public class NetconfServerSessionListener implements NetconfSessionListener<Netc
         }
     }
 
-    public void onNotification(final NetconfServerSession session, final NetconfNotification notification) {
+    @Override
+    public void onError(final NetconfServerSession session, final Exception failure) {
+        session.onIncommingRpcFail();
+        monitoringSessionListener.onSessionEvent(SessionEvent.inRpcFail(session));
+        throw new IllegalStateException("Unable to process incoming message", failure);
+    }
+
+    public void onNotification(final NetconfServerSession session, final NotificationMessage notification) {
         monitoringSessionListener.onSessionEvent(SessionEvent.notification(session));
     }
 
@@ -144,14 +152,10 @@ public class NetconfServerSessionListener implements NetconfSessionListener<Netc
     }
 
     private static void checkMessageId(final Node rootNode) throws DocumentedException {
-
         final NamedNodeMap attributes = rootNode.getAttributes();
-
-        if (attributes.getNamedItemNS(XmlNetconfConstants.URN_IETF_PARAMS_XML_NS_NETCONF_BASE_1_0,
-                XmlNetconfConstants.MESSAGE_ID) != null) {
+        if (attributes.getNamedItemNS(NamespaceURN.BASE, XmlNetconfConstants.MESSAGE_ID) != null) {
             return;
         }
-
         if (attributes.getNamedItem(XmlNetconfConstants.MESSAGE_ID) != null) {
             return;
         }

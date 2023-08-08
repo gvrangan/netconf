@@ -18,8 +18,8 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.locks.StampedLock;
 import org.eclipse.jdt.annotation.Nullable;
 import org.opendaylight.mdsal.dom.api.DOMMountPointService;
+import org.opendaylight.restconf.nb.rfc8040.URLConstants;
 import org.opendaylight.restconf.nb.rfc8040.rests.utils.RestconfStreamsConstants;
-import org.opendaylight.restconf.nb.rfc8040.utils.RestconfConstants;
 import org.opendaylight.yang.gen.v1.urn.sal.restconf.event.subscription.rev140708.NotificationOutputTypeGrouping.NotificationOutputType;
 import org.opendaylight.yangtools.yang.data.api.YangInstanceIdentifier;
 import org.opendaylight.yangtools.yang.model.api.EffectiveModelContext;
@@ -32,10 +32,14 @@ import org.slf4j.LoggerFactory;
  * This singleton class is responsible for creation, removal and searching for {@link ListenerAdapter} or
  * {@link NotificationListenerAdapter} listeners.
  */
-// FIXME: this should be a component
+// FIXME: NETCONF-1104: this should be a component
+// FIXME: furthermore, this should be tied to ietf-restconf-monitoring, as the Strings used in its maps are stream
+//        names. We essentially need a component which deals with allocation of stream names and their lifecycle and
+//        the contents of /restconf-state/streams.
 public final class ListenersBroker {
+    // FIXME: NETCONF-1104: remove this class
+    @Deprecated(since = "7.0.0")
     private static final class Holder {
-        // FIXME: remove this global singleton
         static final ListenersBroker INSTANCE = new ListenersBroker();
     }
 
@@ -48,9 +52,8 @@ public final class ListenersBroker {
     private final BiMap<String, NotificationListenerAdapter> notificationListeners = HashBiMap.create();
     private final BiMap<String, DeviceNotificationListenerAdaptor> deviceNotificationListeners = HashBiMap.create();
 
-
     private ListenersBroker() {
-
+        // FIXME: NETCONF-1104: this constructor should be a public thing
     }
 
     /**
@@ -58,6 +61,8 @@ public final class ListenersBroker {
      *
      * @return Reusable instance of {@link ListenersBroker}.
      */
+    // FIXME: NETCONF-1104: remove this method
+    @Deprecated(since = "7.0.0")
     public static ListenersBroker getInstance() {
         return Holder.INSTANCE;
     }
@@ -381,7 +386,7 @@ public final class ListenersBroker {
 
     /**
      * Creates string representation of stream name from URI. Removes slash from URI in start and end positions,
-     * and optionally {@link RestconfConstants#BASE_URI_PATTERN} prefix.
+     * and optionally {@link URLConstants#BASE_PATH} prefix.
      *
      * @param uri URI for creation of stream name.
      * @return String representation of stream name.
@@ -389,8 +394,8 @@ public final class ListenersBroker {
     public static String createStreamNameFromUri(final String uri) {
         String result = requireNonNull(uri);
         while (true) {
-            if (result.startsWith(RestconfConstants.BASE_URI_PATTERN)) {
-                result = result.substring(RestconfConstants.BASE_URI_PATTERN.length());
+            if (result.startsWith(URLConstants.BASE_PATH)) {
+                result = result.substring(URLConstants.BASE_PATH.length());
             } else if (result.startsWith("/")) {
                 result = result.substring(1);
             } else {

@@ -7,7 +7,8 @@
  */
 package org.opendaylight.netconf.callhome.mount;
 
-import com.google.common.annotations.VisibleForTesting;
+import static java.util.Objects.requireNonNull;
+
 import com.google.common.util.concurrent.FutureCallback;
 import com.google.common.util.concurrent.ListenableFuture;
 import com.google.common.util.concurrent.MoreExecutors;
@@ -32,25 +33,31 @@ import org.opendaylight.mdsal.common.api.CommitInfo;
 import org.opendaylight.mdsal.common.api.LogicalDatastoreType;
 import org.opendaylight.netconf.callhome.protocol.NetconfCallHomeServer;
 import org.opendaylight.netconf.callhome.protocol.NetconfCallHomeServerBuilder;
-import org.opendaylight.yang.gen.v1.urn.opendaylight.callhome.device.status.rev170112.Device1;
-import org.opendaylight.yang.gen.v1.urn.opendaylight.callhome.device.status.rev170112.Device1Builder;
-import org.opendaylight.yang.gen.v1.urn.opendaylight.params.xml.ns.yang.netconf.callhome.server.rev201015.NetconfCallhomeServer;
-import org.opendaylight.yang.gen.v1.urn.opendaylight.params.xml.ns.yang.netconf.callhome.server.rev201015.netconf.callhome.server.AllowedDevices;
-import org.opendaylight.yang.gen.v1.urn.opendaylight.params.xml.ns.yang.netconf.callhome.server.rev201015.netconf.callhome.server.allowed.devices.Device;
-import org.opendaylight.yang.gen.v1.urn.opendaylight.params.xml.ns.yang.netconf.callhome.server.rev201015.netconf.callhome.server.allowed.devices.DeviceBuilder;
-import org.opendaylight.yang.gen.v1.urn.opendaylight.params.xml.ns.yang.netconf.callhome.server.rev201015.netconf.callhome.server.allowed.devices.DeviceKey;
-import org.opendaylight.yang.gen.v1.urn.opendaylight.params.xml.ns.yang.netconf.callhome.server.rev201015.netconf.callhome.server.allowed.devices.device.Transport;
-import org.opendaylight.yang.gen.v1.urn.opendaylight.params.xml.ns.yang.netconf.callhome.server.rev201015.netconf.callhome.server.allowed.devices.device.transport.Ssh;
-import org.opendaylight.yang.gen.v1.urn.opendaylight.params.xml.ns.yang.netconf.callhome.server.rev201015.netconf.callhome.server.allowed.devices.device.transport.SshBuilder;
-import org.opendaylight.yang.gen.v1.urn.opendaylight.params.xml.ns.yang.netconf.callhome.server.rev201015.netconf.callhome.server.allowed.devices.device.transport.Tls;
-import org.opendaylight.yang.gen.v1.urn.opendaylight.params.xml.ns.yang.netconf.callhome.server.rev201015.netconf.callhome.server.allowed.devices.device.transport.ssh.SshClientParams;
-import org.opendaylight.yang.gen.v1.urn.opendaylight.params.xml.ns.yang.netconf.callhome.server.rev201015.netconf.callhome.server.allowed.devices.device.transport.ssh.SshClientParamsBuilder;
+import org.opendaylight.yang.gen.v1.urn.opendaylight.params.xml.ns.yang.netconf.callhome.server.rev230428.NetconfCallhomeServer;
+import org.opendaylight.yang.gen.v1.urn.opendaylight.params.xml.ns.yang.netconf.callhome.server.rev230428.netconf.callhome.server.AllowedDevices;
+import org.opendaylight.yang.gen.v1.urn.opendaylight.params.xml.ns.yang.netconf.callhome.server.rev230428.netconf.callhome.server.allowed.devices.Device;
+import org.opendaylight.yang.gen.v1.urn.opendaylight.params.xml.ns.yang.netconf.callhome.server.rev230428.netconf.callhome.server.allowed.devices.Device.DeviceStatus;
+import org.opendaylight.yang.gen.v1.urn.opendaylight.params.xml.ns.yang.netconf.callhome.server.rev230428.netconf.callhome.server.allowed.devices.DeviceBuilder;
+import org.opendaylight.yang.gen.v1.urn.opendaylight.params.xml.ns.yang.netconf.callhome.server.rev230428.netconf.callhome.server.allowed.devices.DeviceKey;
+import org.opendaylight.yang.gen.v1.urn.opendaylight.params.xml.ns.yang.netconf.callhome.server.rev230428.netconf.callhome.server.allowed.devices.device.Transport;
+import org.opendaylight.yang.gen.v1.urn.opendaylight.params.xml.ns.yang.netconf.callhome.server.rev230428.netconf.callhome.server.allowed.devices.device.transport.Ssh;
+import org.opendaylight.yang.gen.v1.urn.opendaylight.params.xml.ns.yang.netconf.callhome.server.rev230428.netconf.callhome.server.allowed.devices.device.transport.SshBuilder;
+import org.opendaylight.yang.gen.v1.urn.opendaylight.params.xml.ns.yang.netconf.callhome.server.rev230428.netconf.callhome.server.allowed.devices.device.transport.Tls;
+import org.opendaylight.yang.gen.v1.urn.opendaylight.params.xml.ns.yang.netconf.callhome.server.rev230428.netconf.callhome.server.allowed.devices.device.transport.ssh.SshClientParams;
+import org.opendaylight.yang.gen.v1.urn.opendaylight.params.xml.ns.yang.netconf.callhome.server.rev230428.netconf.callhome.server.allowed.devices.device.transport.ssh.SshClientParamsBuilder;
 import org.opendaylight.yangtools.concepts.ListenerRegistration;
 import org.opendaylight.yangtools.yang.binding.InstanceIdentifier;
+import org.opendaylight.yangtools.yang.common.Uint16;
+import org.osgi.service.component.annotations.Activate;
+import org.osgi.service.component.annotations.Component;
+import org.osgi.service.component.annotations.Deactivate;
+import org.osgi.service.component.annotations.Reference;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-public class IetfZeroTouchCallHomeServerProvider implements AutoCloseable, DataTreeChangeListener<AllowedDevices> {
+@Component(service = { })
+public final class IetfZeroTouchCallHomeServerProvider
+        implements AutoCloseable, DataTreeChangeListener<AllowedDevices> {
     private static final String APPNAME = "CallHomeServer";
     static final InstanceIdentifier<AllowedDevices> ALL_DEVICES = InstanceIdentifier.create(NetconfCallhomeServer.class)
             .child(AllowedDevices.class);
@@ -60,46 +67,44 @@ public class IetfZeroTouchCallHomeServerProvider implements AutoCloseable, DataT
     private final DataBroker dataBroker;
     private final CallHomeMountDispatcher mountDispacher;
     private final CallHomeAuthProviderImpl authProvider;
+    private final CallhomeStatusReporter statusReporter;
+    private final int port;
 
-    protected NetconfCallHomeServer server;
-
+    private NetconfCallHomeServer server;
     private ListenerRegistration<IetfZeroTouchCallHomeServerProvider> listenerReg = null;
 
-    private static final String CALL_HOME_PORT_KEY = "DefaultCallHomePort";
-    private int port = 0; // 0 = use default in NetconfCallHomeBuilder
-    private final CallhomeStatusReporter statusReporter;
+    @Activate
+    public IetfZeroTouchCallHomeServerProvider(@Reference final DataBroker dataBroker,
+            @Reference final CallHomeMountDispatcher mountDispacher) {
+        // FIXME: make this configurable
+        this(dataBroker, mountDispacher, Uint16.valueOf(4334));
+    }
 
     public IetfZeroTouchCallHomeServerProvider(final DataBroker dataBroker,
-            final CallHomeMountDispatcher mountDispacher) {
-        this.dataBroker = dataBroker;
-        this.mountDispacher = mountDispacher;
+            final CallHomeMountDispatcher mountDispacher, final Uint16 port) {
+        this.dataBroker = requireNonNull(dataBroker);
+        this.mountDispacher = requireNonNull(mountDispacher);
+
+        LOG.info("Setting port for call home server to {}", port);
+        this.port = port.toJava();
+
         // FIXME: these should be separate components
         authProvider = new CallHomeAuthProviderImpl(dataBroker);
         statusReporter = new CallhomeStatusReporter(dataBroker);
-    }
 
-    public void init() {
+        LOG.info("Initializing provider for {}", APPNAME);
+
         // Register itself as a listener to changes in Devices subtree
         try {
-            LOG.info("Initializing provider for {}", APPNAME);
             initializeServer();
-            listenerReg = dataBroker.registerDataTreeChangeListener(
-                DataTreeIdentifier.create(LogicalDatastoreType.CONFIGURATION, ALL_DEVICES), this);
-            LOG.info("Initialization complete for {}", APPNAME);
         } catch (IOException | Configuration.ConfigurationException e) {
             LOG.error("Unable to successfully initialize", e);
+            return;
         }
-    }
 
-    public void setPort(final String portStr) {
-        try {
-            Configuration configuration = new Configuration();
-            configuration.set(CALL_HOME_PORT_KEY, portStr);
-            port = configuration.getAsPort(CALL_HOME_PORT_KEY);
-            LOG.info("Setting port for call home server to {}", portStr);
-        } catch (Configuration.ConfigurationException e) {
-            LOG.error("Problem trying to set port for call home server {}", portStr, e);
-        }
+        listenerReg = dataBroker.registerDataTreeChangeListener(
+            DataTreeIdentifier.create(LogicalDatastoreType.CONFIGURATION, ALL_DEVICES), this);
+        LOG.info("Initialization complete for {}", APPNAME);
     }
 
     private void initializeServer() throws IOException {
@@ -116,14 +121,7 @@ public class IetfZeroTouchCallHomeServerProvider implements AutoCloseable, DataT
         LOG.info("Initialization complete for Call Home server instance");
     }
 
-    @VisibleForTesting
-    void assertValid(final Object obj, final String description) {
-        if (obj == null) {
-            throw new IllegalStateException(
-                "Failed to find " + description + " in IetfZeroTouchCallHomeProvider.initialize()");
-        }
-    }
-
+    @Deactivate
     @Override
     public void close() {
         authProvider.close();
@@ -213,13 +211,9 @@ public class IetfZeroTouchCallHomeServerProvider implements AutoCloseable, DataT
         ReadWriteTransaction tx = dataBroker.newReadWriteTransaction();
         ListenableFuture<Optional<Device>> deviceFuture = tx.read(LogicalDatastoreType.OPERATIONAL, deviceIID);
 
-        final Device1 devStatus;
-        Optional<Device> opDevGet = deviceFuture.get();
-        if (opDevGet.isPresent()) {
-            devStatus = opDevGet.orElseThrow().augmentation(Device1.class);
-        } else {
-            devStatus = new Device1Builder().setDeviceStatus(Device1.DeviceStatus.DISCONNECTED).build();
-        }
+        final DeviceStatus devStatus = deviceFuture.get()
+            .map(Device::getDeviceStatus)
+            .orElse(DeviceStatus.DISCONNECTED);
 
         final Device opDevice = createOperationalDevice(cfgDevice, devStatus);
         tx.merge(LogicalDatastoreType.OPERATIONAL, deviceIID, opDevice);
@@ -236,10 +230,10 @@ public class IetfZeroTouchCallHomeServerProvider implements AutoCloseable, DataT
         }, MoreExecutors.directExecutor());
     }
 
-    private static Device createOperationalDevice(final Device cfgDevice, final Device1 devStatus) {
+    private static Device createOperationalDevice(final Device cfgDevice, final DeviceStatus devStatus) {
         final DeviceBuilder deviceBuilder = new DeviceBuilder()
-            .addAugmentation(devStatus)
-            .setUniqueId(cfgDevice.getUniqueId());
+            .setUniqueId(cfgDevice.getUniqueId())
+            .setDeviceStatus(devStatus);
         if (cfgDevice.getTransport() instanceof Ssh ssh) {
             final String hostKey = ssh.getSshClientParams().getHostKey();
             final SshClientParams params = new SshClientParamsBuilder().setHostKey(hostKey).build();

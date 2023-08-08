@@ -9,6 +9,7 @@ package org.opendaylight.restconf.nb.rfc8040.rests.services.impl;
 
 import static com.google.common.base.Strings.isNullOrEmpty;
 
+import com.google.common.base.Splitter;
 import java.net.URI;
 import java.util.HashMap;
 import java.util.Map;
@@ -22,15 +23,14 @@ import org.opendaylight.mdsal.dom.api.DOMDataTreeWriteOperations;
 import org.opendaylight.mdsal.dom.api.DOMDataTreeWriteTransaction;
 import org.opendaylight.restconf.common.errors.RestconfDocumentedException;
 import org.opendaylight.restconf.nb.rfc8040.NotificationQueryParams;
-import org.opendaylight.restconf.nb.rfc8040.Rfc8040;
+import org.opendaylight.restconf.nb.rfc8040.URLConstants;
 import org.opendaylight.restconf.nb.rfc8040.databind.DatabindProvider;
+import org.opendaylight.restconf.nb.rfc8040.monitoring.RestconfStateStreams;
 import org.opendaylight.restconf.nb.rfc8040.rests.services.impl.RestconfStreamsSubscriptionServiceImpl.HandlersHolder;
 import org.opendaylight.restconf.nb.rfc8040.rests.utils.RestconfStreamsConstants;
 import org.opendaylight.restconf.nb.rfc8040.streams.listeners.ListenerAdapter;
 import org.opendaylight.restconf.nb.rfc8040.streams.listeners.ListenersBroker;
 import org.opendaylight.restconf.nb.rfc8040.streams.listeners.NotificationListenerAdapter;
-import org.opendaylight.restconf.nb.rfc8040.utils.RestconfConstants;
-import org.opendaylight.restconf.nb.rfc8040.utils.mapping.RestconfMappingNodeUtil;
 import org.opendaylight.restconf.nb.rfc8040.utils.parser.IdentifierCodec;
 import org.opendaylight.yangtools.yang.common.ErrorTag;
 import org.opendaylight.yangtools.yang.common.ErrorType;
@@ -51,9 +51,9 @@ abstract class SubscribeToStreamUtil {
 
         @Override
         public URI prepareUriByStreamName(final UriInfo uriInfo, final String streamName) {
-            final UriBuilder uriBuilder = uriInfo.getBaseUriBuilder();
-            return uriBuilder.replacePath(RestconfConstants.BASE_URI_PATTERN + '/'
-                    + RestconfConstants.NOTIF + '/' + streamName).build();
+            return uriInfo.getBaseUriBuilder()
+                .replacePath(URLConstants.BASE_PATH + '/' + URLConstants.SSE_SUBPATH + '/' + streamName)
+                .build();
         }
     }
 
@@ -77,12 +77,12 @@ abstract class SubscribeToStreamUtil {
                     // Unsecured HTTP and others go to unsecured WebSockets
                     uriBuilder.scheme("ws");
             }
-            return uriBuilder.replacePath(RestconfConstants.BASE_URI_PATTERN + '/' + streamName).build();
+            return uriBuilder.replacePath(URLConstants.BASE_PATH + '/' + streamName).build();
         }
     }
 
-
     private static final Logger LOG = LoggerFactory.getLogger(SubscribeToStreamUtil.class);
+    private static final Splitter SLASH_SPLITTER = Splitter.on('/');
 
     SubscribeToStreamUtil() {
         // Hidden on purpose
@@ -136,10 +136,9 @@ abstract class SubscribeToStreamUtil {
         notificationListenerAdapter.listen(handlersHolder.getNotificationServiceHandler());
         final DOMDataBroker dataBroker = handlersHolder.getDataBroker();
         notificationListenerAdapter.setCloseVars(dataBroker, handlersHolder.getDatabindProvider());
-        final MapEntryNode mapToStreams = RestconfMappingNodeUtil.mapYangNotificationStreamByIetfRestconfMonitoring(
-                    notificationListenerAdapter.getSchemaPath().lastNodeIdentifier(),
-                    schemaContext.getNotifications(), notificationListenerAdapter.getStart(),
-                    notificationListenerAdapter.getOutputType(), uri);
+        final MapEntryNode mapToStreams = RestconfStateStreams.notificationStreamEntry(schemaContext,
+            notificationListenerAdapter.getSchemaPath().lastNodeIdentifier(), notificationListenerAdapter.getStart(),
+            notificationListenerAdapter.getOutputType(), uri);
 
         // FIXME: how does this correlate with the transaction notificationListenerAdapter.close() will do?
         final DOMDataTreeWriteTransaction writeTransaction = dataBroker.newWriteOnlyTransaction();
@@ -194,8 +193,7 @@ abstract class SubscribeToStreamUtil {
         final EffectiveModelContext schemaContext = schemaHandler.currentContext().modelContext();
         final String serializedPath = IdentifierCodec.serialize(listener.getPath(), schemaContext);
 
-        final MapEntryNode mapToStreams =
-            RestconfMappingNodeUtil.mapDataChangeNotificationStreamByIetfRestconfMonitoring(listener.getPath(),
+        final MapEntryNode mapToStreams = RestconfStateStreams.dataChangeStreamEntry(listener.getPath(),
                 listener.getStart(), listener.getOutputType(), uri, schemaContext, serializedPath);
         final DOMDataTreeWriteTransaction writeTransaction = dataBroker.newWriteOnlyTransaction();
         writeDataToDS(writeTransaction, mapToStreams);
@@ -206,7 +204,7 @@ abstract class SubscribeToStreamUtil {
     // FIXME: callers are utter duplicates, refactor them
     private static void writeDataToDS(final DOMDataTreeWriteOperations tx, final MapEntryNode mapToStreams) {
         // FIXME: use put() here
-        tx.merge(LogicalDatastoreType.OPERATIONAL, Rfc8040.restconfStateStreamPath(mapToStreams.getIdentifier()),
+        tx.merge(LogicalDatastoreType.OPERATIONAL, RestconfStateStreams.restconfStateStreamPath(mapToStreams.name()),
             mapToStreams);
     }
 
@@ -225,8 +223,8 @@ abstract class SubscribeToStreamUtil {
      * @return Map od URI parameters and values.
      */
     private static Map<String, String> mapValuesFromUri(final String identifier) {
-        final HashMap<String, String> result = new HashMap<>();
-        for (final String token : RestconfConstants.SLASH_SPLITTER.split(identifier)) {
+        final var result = new HashMap<String, String>();
+        for (final String token : SLASH_SPLITTER.split(identifier)) {
             final String[] paramToken = token.split("=");
             if (paramToken.length == 2) {
                 result.put(paramToken[0], paramToken[1]);

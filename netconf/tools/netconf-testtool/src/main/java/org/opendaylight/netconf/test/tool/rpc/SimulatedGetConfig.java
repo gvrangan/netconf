@@ -14,7 +14,8 @@ import java.util.Optional;
 import org.opendaylight.netconf.api.xml.XmlElement;
 import org.opendaylight.netconf.api.xml.XmlNetconfConstants;
 import org.opendaylight.netconf.api.xml.XmlUtil;
-import org.opendaylight.netconf.util.mapping.AbstractLastNetconfOperation;
+import org.opendaylight.netconf.server.api.operations.AbstractLastNetconfOperation;
+import org.opendaylight.yang.gen.v1.urn.ietf.params.xml.ns.netconf.base._1._0.rev110601.SessionIdType;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.w3c.dom.Document;
@@ -22,13 +23,13 @@ import org.w3c.dom.Element;
 import org.xml.sax.SAXException;
 
 public class SimulatedGetConfig extends AbstractLastNetconfOperation {
-
-    private final DataList storage;
     private static final Logger LOG = LoggerFactory.getLogger(SimulatedGetConfig.class);
 
-    public SimulatedGetConfig(final String netconfSessionIdForReporting, final DataList storage,
+    private final DataList storage;
+
+    public SimulatedGetConfig(final SessionIdType sessionId, final DataList storage,
                               final Optional<File> initialConfigXMLFile) {
-        super(netconfSessionIdForReporting);
+        super(sessionId);
 
         if (initialConfigXMLFile.isPresent()) {
             final var file = initialConfigXMLFile.orElseThrow();

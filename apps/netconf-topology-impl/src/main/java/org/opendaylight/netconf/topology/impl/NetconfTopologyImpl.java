@@ -26,11 +26,11 @@ import org.opendaylight.mdsal.binding.api.RpcProviderService;
 import org.opendaylight.mdsal.common.api.LogicalDatastoreType;
 import org.opendaylight.mdsal.dom.api.DOMMountPointService;
 import org.opendaylight.netconf.client.NetconfClientDispatcher;
-import org.opendaylight.netconf.sal.connect.api.DeviceActionFactory;
-import org.opendaylight.netconf.sal.connect.api.SchemaResourceManager;
-import org.opendaylight.netconf.sal.connect.netconf.schema.mapping.BaseNetconfSchemas;
+import org.opendaylight.netconf.client.mdsal.api.BaseNetconfSchemas;
+import org.opendaylight.netconf.client.mdsal.api.DeviceActionFactory;
+import org.opendaylight.netconf.client.mdsal.api.SchemaResourceManager;
 import org.opendaylight.netconf.topology.spi.AbstractNetconfTopology;
-import org.opendaylight.netconf.topology.spi.NetconfConnectorDTO;
+import org.opendaylight.netconf.topology.spi.NetconfClientConfigurationBuilderFactory;
 import org.opendaylight.netconf.topology.spi.NetconfNodeUtils;
 import org.opendaylight.netconf.topology.spi.NetconfTopologyRPCProvider;
 import org.opendaylight.yang.gen.v1.urn.opendaylight.netconf.node.topology.rev221225.NetconfNodeTopologyService;
@@ -42,8 +42,9 @@ import org.opendaylight.yang.gen.v1.urn.tbd.params.xml.ns.yang.network.topology.
 import org.opendaylight.yang.gen.v1.urn.tbd.params.xml.ns.yang.network.topology.rev131021.network.topology.topology.Node;
 import org.opendaylight.yang.gen.v1.urn.tbd.params.xml.ns.yang.network.topology.rev131021.network.topology.topology.NodeKey;
 import org.opendaylight.yangtools.concepts.Registration;
-import org.opendaylight.yangtools.yang.binding.Identifier;
 import org.opendaylight.yangtools.yang.binding.InstanceIdentifier;
+import org.opendaylight.yangtools.yang.binding.InstanceIdentifier.IdentifiableItem;
+import org.opendaylight.yangtools.yang.binding.InstanceIdentifier.PathArgument;
 import org.opendaylight.yangtools.yang.binding.KeyedInstanceIdentifier;
 import org.osgi.service.component.annotations.Activate;
 import org.osgi.service.component.annotations.Component;
@@ -73,22 +74,23 @@ public class NetconfTopologyImpl extends AbstractNetconfTopology
             @Reference final SchemaResourceManager schemaRepositoryProvider, @Reference final DataBroker dataBroker,
             @Reference final DOMMountPointService mountPointService,
             @Reference final AAAEncryptionService encryptionService,
+            @Reference final NetconfClientConfigurationBuilderFactory builderFactory,
             @Reference final RpcProviderService rpcProviderService, @Reference final BaseNetconfSchemas baseSchemas,
             @Reference final DeviceActionFactory deviceActionFactory) {
         this(NetconfNodeUtils.DEFAULT_TOPOLOGY_NAME, clientDispatcher, eventExecutor, keepaliveExecutor,
             processingExecutor, schemaRepositoryProvider, dataBroker, mountPointService, encryptionService,
-            rpcProviderService, baseSchemas, deviceActionFactory);
+            builderFactory, rpcProviderService, baseSchemas, deviceActionFactory);
     }
 
     public NetconfTopologyImpl(final String topologyId, final NetconfClientDispatcher clientDispatcher,
             final EventExecutor eventExecutor, final ScheduledThreadPool keepaliveExecutor,
             final ThreadPool processingExecutor, final SchemaResourceManager schemaRepositoryProvider,
             final DataBroker dataBroker, final DOMMountPointService mountPointService,
-            final AAAEncryptionService encryptionService, final RpcProviderService rpcProviderService,
-            final BaseNetconfSchemas baseSchemas) {
+            final AAAEncryptionService encryptionService, final NetconfClientConfigurationBuilderFactory builderFactory,
+            final RpcProviderService rpcProviderService, final BaseNetconfSchemas baseSchemas) {
         this(topologyId, clientDispatcher, eventExecutor, keepaliveExecutor, processingExecutor,
-                schemaRepositoryProvider, dataBroker, mountPointService, encryptionService, rpcProviderService,
-                baseSchemas, null);
+            schemaRepositoryProvider, dataBroker, mountPointService, encryptionService, builderFactory,
+            rpcProviderService, baseSchemas, null);
     }
 
     @SuppressFBWarnings(value = "MC_OVERRIDABLE_METHOD_CALL_IN_CONSTRUCTOR",
@@ -97,11 +99,11 @@ public class NetconfTopologyImpl extends AbstractNetconfTopology
             final EventExecutor eventExecutor, final ScheduledThreadPool keepaliveExecutor,
             final ThreadPool processingExecutor, final SchemaResourceManager schemaRepositoryProvider,
             final DataBroker dataBroker, final DOMMountPointService mountPointService,
-            final AAAEncryptionService encryptionService, final RpcProviderService rpcProviderService,
-            final BaseNetconfSchemas baseSchemas, final DeviceActionFactory deviceActionFactory) {
+            final AAAEncryptionService encryptionService, final NetconfClientConfigurationBuilderFactory builderFactory,
+            final RpcProviderService rpcProviderService, final BaseNetconfSchemas baseSchemas,
+            final DeviceActionFactory deviceActionFactory) {
         super(topologyId, clientDispatcher, eventExecutor, keepaliveExecutor, processingExecutor,
-                schemaRepositoryProvider, dataBroker, mountPointService, encryptionService, deviceActionFactory,
-                baseSchemas);
+            schemaRepositoryProvider, dataBroker, mountPointService, builderFactory, deviceActionFactory, baseSchemas);
 
         LOG.debug("Registering datastore listener");
         dtclReg = dataBroker.registerDataTreeChangeListener(DataTreeIdentifier.create(
@@ -120,10 +122,7 @@ public class NetconfTopologyImpl extends AbstractNetconfTopology
         }
 
         // close all existing connectors, delete whole topology in datastore?
-        for (final NetconfConnectorDTO connectorDTO : activeConnectors.values()) {
-            connectorDTO.close();
-        }
-        activeConnectors.clear();
+        deleteAllNodes();
 
         if (dtclReg != null) {
             dtclReg.close();
@@ -137,28 +136,20 @@ public class NetconfTopologyImpl extends AbstractNetconfTopology
             final DataObjectModification<Node> rootNode = change.getRootNode();
             final NodeId nodeId;
             switch (rootNode.getModificationType()) {
-                case SUBTREE_MODIFIED:
-                    nodeId = getNodeId(rootNode.getIdentifier());
-                    LOG.debug("Config for node {} updated", nodeId);
-                    disconnectNode(nodeId);
-                    connectNode(nodeId, rootNode.getDataAfter());
-                    break;
-                case WRITE:
-                    nodeId = getNodeId(rootNode.getIdentifier());
-                    LOG.debug("Config for node {} created", nodeId);
-                    if (activeConnectors.containsKey(nodeId)) {
-                        LOG.warn("RemoteDevice{{}} was already configured, reconfiguring..", nodeId);
-                        disconnectNode(nodeId);
-                    }
-                    connectNode(nodeId, rootNode.getDataAfter());
-                    break;
-                case DELETE:
+                case SUBTREE_MODIFIED -> {
+                    LOG.debug("Config for node {} updated", getNodeId(rootNode.getIdentifier()));
+                    ensureNode(rootNode.getDataAfter());
+                }
+                case WRITE -> {
+                    LOG.debug("Config for node {} created", getNodeId(rootNode.getIdentifier()));
+                    ensureNode(rootNode.getDataAfter());
+                }
+                case DELETE -> {
                     nodeId = getNodeId(rootNode.getIdentifier());
                     LOG.debug("Config for node {} deleted", nodeId);
-                    disconnectNode(nodeId);
-                    break;
-                default:
-                    LOG.debug("Unsupported modification type: {}.", rootNode.getModificationType());
+                    deleteNode(nodeId);
+                }
+                default -> LOG.debug("Unsupported modification type: {}.", rootNode.getModificationType());
             }
         }
     }
@@ -171,19 +162,16 @@ public class NetconfTopologyImpl extends AbstractNetconfTopology
      * @return     NodeId for the node
      */
     @VisibleForTesting
-    static NodeId getNodeId(final InstanceIdentifier.PathArgument pathArgument) {
-        if (pathArgument instanceof InstanceIdentifier.IdentifiableItem<?, ?>) {
-            final Identifier<?> key = ((InstanceIdentifier.IdentifiableItem<?, ?>) pathArgument).getKey();
-            if (key instanceof NodeKey) {
-                return ((NodeKey) key).getNodeId();
-            }
+    static NodeId getNodeId(final PathArgument pathArgument) {
+        if (pathArgument instanceof IdentifiableItem<?, ?> ident && ident.getKey() instanceof NodeKey nodeKey) {
+            return nodeKey.getNodeId();
         }
         throw new IllegalStateException("Unable to create NodeId from: " + pathArgument);
     }
 
     @VisibleForTesting
     static KeyedInstanceIdentifier<Topology, TopologyKey> createTopologyListPath(final String topologyId) {
-        final InstanceIdentifier<NetworkTopology> networkTopology = InstanceIdentifier.create(NetworkTopology.class);
-        return networkTopology.child(Topology.class, new TopologyKey(new TopologyId(topologyId)));
+        return InstanceIdentifier.create(NetworkTopology.class)
+            .child(Topology.class, new TopologyKey(new TopologyId(topologyId)));
     }
 }

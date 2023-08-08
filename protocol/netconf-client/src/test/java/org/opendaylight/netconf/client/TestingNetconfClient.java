@@ -13,7 +13,6 @@ import com.google.common.collect.Sets;
 import io.netty.channel.nio.NioEventLoopGroup;
 import io.netty.util.HashedWheelTimer;
 import io.netty.util.concurrent.Future;
-import io.netty.util.concurrent.GlobalEventExecutor;
 import java.io.Closeable;
 import java.io.IOException;
 import java.net.InetAddress;
@@ -25,14 +24,14 @@ import java.util.concurrent.CancellationException;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+import org.eclipse.jdt.annotation.NonNull;
 import org.opendaylight.netconf.api.NetconfMessage;
 import org.opendaylight.netconf.client.conf.NetconfClientConfiguration;
 import org.opendaylight.netconf.client.conf.NetconfClientConfiguration.NetconfClientProtocol;
 import org.opendaylight.netconf.client.conf.NetconfClientConfigurationBuilder;
-import org.opendaylight.netconf.nettyutil.NeverReconnectStrategy;
 import org.opendaylight.netconf.nettyutil.handler.ssh.authentication.AuthenticationHandler;
 import org.opendaylight.netconf.nettyutil.handler.ssh.authentication.LoginPasswordHandler;
-
+import org.opendaylight.yang.gen.v1.urn.ietf.params.xml.ns.netconf.base._1._0.rev110601.SessionIdType;
 
 /**
  * Synchronous netconf client suitable for testing.
@@ -44,16 +43,14 @@ public class TestingNetconfClient implements Closeable {
     private final String label;
     private final NetconfClientSession clientSession;
     private final NetconfClientSessionListener sessionListener;
-    private final long sessionId;
 
     public TestingNetconfClient(final String clientLabel,
                                 final NetconfClientDispatcher netconfClientDispatcher,
                                 final NetconfClientConfiguration config) throws InterruptedException {
-        this.label = clientLabel;
+        label = clientLabel;
         sessionListener = config.getSessionListener();
         Future<NetconfClientSession> clientFuture = netconfClientDispatcher.createClient(config);
         clientSession = get(clientFuture);
-        this.sessionId = clientSession.getSessionId();
     }
 
     private static NetconfClientSession get(final Future<NetconfClientSession> clientFuture)
@@ -90,13 +87,13 @@ public class TestingNetconfClient implements Closeable {
     public String toString() {
         final StringBuilder sb = new StringBuilder("TestingNetconfClient{");
         sb.append("label=").append(label);
-        sb.append(", sessionId=").append(sessionId);
+        sb.append(", sessionId=").append(sessionId().getValue());
         sb.append('}');
         return sb.toString();
     }
 
-    public long getSessionId() {
-        return sessionId;
+    public @NonNull SessionIdType sessionId() {
+        return clientSession.sessionId();
     }
 
     public Set<String> getCapabilities() {
@@ -118,14 +115,11 @@ public class TestingNetconfClient implements Closeable {
     private static NetconfClientConfiguration getClientConfig(final String host, final int port, final boolean ssh,
             final Optional<? extends AuthenticationHandler> maybeAuthHandler) throws UnknownHostException {
         InetSocketAddress netconfAddress = new InetSocketAddress(InetAddress.getByName(host), port);
-        final NetconfClientConfigurationBuilder b = NetconfClientConfigurationBuilder.create();
-        b.withAddress(netconfAddress);
-        b.withSessionListener(new SimpleNetconfClientSessionListener());
-        b.withReconnectStrategy(new NeverReconnectStrategy(GlobalEventExecutor.INSTANCE,
-                NetconfClientConfigurationBuilder.DEFAULT_CONNECTION_TIMEOUT_MILLIS));
+        final NetconfClientConfigurationBuilder b = NetconfClientConfigurationBuilder.create()
+            .withAddress(netconfAddress)
+            .withSessionListener(new SimpleNetconfClientSessionListener());
         if (ssh) {
-            b.withProtocol(NetconfClientProtocol.SSH);
-            b.withAuthHandler(maybeAuthHandler.orElseThrow());
+            b.withProtocol(NetconfClientProtocol.SSH).withAuthHandler(maybeAuthHandler.orElseThrow());
         } else {
             b.withProtocol(NetconfClientProtocol.TCP);
         }

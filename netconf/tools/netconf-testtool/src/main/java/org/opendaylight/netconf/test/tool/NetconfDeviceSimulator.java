@@ -24,7 +24,6 @@ import java.net.Inet4Address;
 import java.net.InetSocketAddress;
 import java.net.UnknownHostException;
 import java.nio.channels.AsynchronousChannelGroup;
-import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
@@ -34,25 +33,25 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
-import org.opendaylight.netconf.api.capability.BasicCapability;
-import org.opendaylight.netconf.api.capability.Capability;
-import org.opendaylight.netconf.api.capability.YangModuleCapability;
-import org.opendaylight.netconf.api.monitoring.NetconfMonitoringService;
-import org.opendaylight.netconf.mapping.api.NetconfOperationServiceFactory;
-import org.opendaylight.netconf.server.DefaultSessionIdProvider;
+import org.opendaylight.netconf.api.CapabilityURN;
+import org.opendaylight.netconf.northbound.ssh.SshProxyServer;
+import org.opendaylight.netconf.northbound.ssh.SshProxyServerConfiguration;
+import org.opendaylight.netconf.northbound.ssh.SshProxyServerConfigurationBuilder;
 import org.opendaylight.netconf.server.NetconfServerDispatcherImpl;
 import org.opendaylight.netconf.server.NetconfServerSessionNegotiatorFactory;
 import org.opendaylight.netconf.server.ServerChannelInitializer;
-import org.opendaylight.netconf.server.SessionIdProvider;
+import org.opendaylight.netconf.server.api.SessionIdProvider;
+import org.opendaylight.netconf.server.api.monitoring.BasicCapability;
+import org.opendaylight.netconf.server.api.monitoring.Capability;
+import org.opendaylight.netconf.server.api.monitoring.NetconfMonitoringService;
+import org.opendaylight.netconf.server.api.monitoring.YangModuleCapability;
+import org.opendaylight.netconf.server.api.operations.NetconfOperationServiceFactory;
+import org.opendaylight.netconf.server.impl.DefaultSessionIdProvider;
 import org.opendaylight.netconf.server.osgi.AggregatedNetconfOperationServiceFactory;
 import org.opendaylight.netconf.shaded.sshd.common.keyprovider.KeyPairProvider;
 import org.opendaylight.netconf.shaded.sshd.common.util.threads.ThreadUtils;
-import org.opendaylight.netconf.ssh.SshProxyServer;
-import org.opendaylight.netconf.ssh.SshProxyServerConfiguration;
-import org.opendaylight.netconf.ssh.SshProxyServerConfigurationBuilder;
 import org.opendaylight.netconf.test.tool.config.Configuration;
 import org.opendaylight.netconf.test.tool.customrpc.SettableOperationProvider;
-import org.opendaylight.netconf.test.tool.monitoring.NetconfMonitoringOperationService;
 import org.opendaylight.netconf.test.tool.monitoring.NetconfMonitoringOperationServiceFactory;
 import org.opendaylight.netconf.test.tool.operations.DefaultOperationsCreator;
 import org.opendaylight.netconf.test.tool.operations.OperationsProvider;
@@ -109,7 +108,7 @@ public class NetconfDeviceSimulator implements Closeable {
                 return input;
             }
         }));
-        transformedCapabilities.add(new BasicCapability("urn:ietf:params:netconf:capability:candidate:1.0"));
+        transformedCapabilities.add(new BasicCapability(CapabilityURN.CANDIDATE));
         final NetconfMonitoringService monitoringService1 = new DummyMonitoringService(transformedCapabilities);
         final SessionIdProvider idProvider = new DefaultSessionIdProvider();
 
@@ -142,24 +141,22 @@ public class NetconfDeviceSimulator implements Closeable {
                 idProvider, transformedCapabilities, schemaContext, sourceProvider);
         } else if (configuration.isXmlConfigurationProvided()) {
             LOG.info("using SimulatedOperationProvider.");
-            operationProvider = new SimulatedOperationProvider(idProvider, transformedCapabilities,
+            operationProvider = new SimulatedOperationProvider(transformedCapabilities,
                     Optional.ofNullable(configuration.getNotificationFile()),
                     Optional.ofNullable(configuration.getInitialConfigXMLFile()));
         } else if (configuration.isNotificationsSupported()) {
             LOG.info("using SimulatedOperationProvider.");
-            operationProvider = new SimulatedOperationProvider(idProvider, transformedCapabilities,
+            operationProvider = new SimulatedOperationProvider(transformedCapabilities,
                     Optional.ofNullable(configuration.getNotificationFile()),
                     Optional.empty());
         } else {
             LOG.info("using OperationsProvider.");
-            operationProvider = new OperationsProvider(idProvider, transformedCapabilities,
-                requireNonNullElseGet(configuration.getOperationsCreator(),
-                    () -> new DefaultOperationsCreator(idProvider.getCurrentSessionId())));
+            operationProvider = new OperationsProvider(transformedCapabilities,
+                requireNonNullElseGet(configuration.getOperationsCreator(), DefaultOperationsCreator::new));
         }
 
         final NetconfMonitoringOperationServiceFactory monitoringService =
-                new NetconfMonitoringOperationServiceFactory(
-                        new NetconfMonitoringOperationService(monitoringService1));
+                new NetconfMonitoringOperationServiceFactory(monitoringService1);
         aggregatedNetconfOperationServiceFactory.onAddNetconfOperationServiceFactory(operationProvider);
         aggregatedNetconfOperationServiceFactory.onAddNetconfOperationServiceFactory(monitoringService);
         if (configuration.getRpcConfigFile() != null) {
@@ -350,19 +347,20 @@ public class NetconfDeviceSimulator implements Closeable {
 
     private static void addModuleCapability(final SharedSchemaRepository consumer, final Set<Capability> capabilities,
                                             final ModuleLike module) {
-        final var sourceId = new SourceIdentifier(module.getName(),
-            module.getRevision().map(Revision::toString).orElse(null));
+        final var moduleNamespace = module.getNamespace().toString();
+        final var moduleName = module.getName();
+        final var revision = module.getRevision().map(Revision::toString).orElse(null);
+        final var sourceId = new SourceIdentifier(moduleName, revision);
 
         final String moduleContent;
         try {
-            moduleContent = consumer.getSchemaSource(sourceId, YangTextSchemaSource.class).get()
-                .asCharSource(StandardCharsets.UTF_8).read();
+            moduleContent = consumer.getSchemaSource(sourceId, YangTextSchemaSource.class).get().read();
         } catch (ExecutionException | InterruptedException | IOException e) {
             throw new IllegalStateException(
                 "Cannot retrieve schema source for module " + sourceId + " from schema repository", e);
         }
 
-        capabilities.add(new YangModuleCapability(module, moduleContent));
+        capabilities.add(new YangModuleCapability(moduleNamespace, moduleName, revision, moduleContent));
     }
 
     private static void registerSource(final SharedSchemaRepository consumer, final String resource,
@@ -397,5 +395,4 @@ public class NetconfDeviceSimulator implements Closeable {
         minaTimerExecutor.shutdownNow();
         nioExecutor.shutdownNow();
     }
-
 }

@@ -36,11 +36,11 @@ import org.opendaylight.mdsal.dom.api.DOMDataTreeWriteTransaction;
 import org.opendaylight.mdsal.dom.api.DOMMountPointService;
 import org.opendaylight.mdsal.dom.api.DOMRpcResult;
 import org.opendaylight.mdsal.dom.api.DOMRpcService;
+import org.opendaylight.netconf.client.mdsal.api.RemoteDeviceId;
+import org.opendaylight.netconf.client.mdsal.api.RemoteDeviceServices;
+import org.opendaylight.netconf.client.mdsal.api.RemoteDeviceServices.Actions;
+import org.opendaylight.netconf.client.mdsal.api.RemoteDeviceServices.Rpcs;
 import org.opendaylight.netconf.dom.api.NetconfDataTreeService;
-import org.opendaylight.netconf.sal.connect.api.RemoteDeviceId;
-import org.opendaylight.netconf.sal.connect.api.RemoteDeviceServices;
-import org.opendaylight.netconf.sal.connect.api.RemoteDeviceServices.Actions;
-import org.opendaylight.netconf.sal.connect.api.RemoteDeviceServices.Rpcs;
 import org.opendaylight.netconf.topology.singleton.impl.ProxyDOMActionService;
 import org.opendaylight.netconf.topology.singleton.impl.ProxyDOMRpcService;
 import org.opendaylight.netconf.topology.singleton.impl.ProxyYangTextSourceProvider;
@@ -181,12 +181,12 @@ public class NetconfNodeActor extends AbstractUntypedActor {
             sender().tell(new Success(null), self());
         } else if (message instanceof UnregisterSlaveMountPoint) { //slaves
             unregisterSlaveMountPoint();
-        } else if (message instanceof RefreshSlaveActor) { //slave
-            actorResponseWaitTime = ((RefreshSlaveActor) message).getActorResponseWaitTime();
-            id = ((RefreshSlaveActor) message).getId();
-            schemaRegistry = ((RefreshSlaveActor) message).getSchemaRegistry();
-            setup = ((RefreshSlaveActor) message).getSetup();
-            schemaRepository = ((RefreshSlaveActor) message).getSchemaRepository();
+        } else if (message instanceof RefreshSlaveActor refreshSlave) { //slave
+            actorResponseWaitTime = refreshSlave.getActorResponseWaitTime();
+            id = refreshSlave.getId();
+            schemaRegistry = refreshSlave.getSchemaRegistry();
+            setup = refreshSlave.getSetup();
+            schemaRepository = refreshSlave.getSchemaRepository();
         } else if (message instanceof NetconfDataTreeServiceRequest) {
             ActorRef netconfActor = context()
                 .actorOf(NetconfDataTreeServiceActor.props(netconfService, writeTxIdleTimeout));
@@ -254,7 +254,7 @@ public class NetconfNodeActor extends AbstractUntypedActor {
                 }
                 NormalizedNodeMessage nodeMessageReply = null;
                 if (domRpcResult.value() != null) {
-                    nodeMessageReply = new NormalizedNodeMessage(YangInstanceIdentifier.empty(), domRpcResult.value());
+                    nodeMessageReply = new NormalizedNodeMessage(YangInstanceIdentifier.of(), domRpcResult.value());
                 }
                 recipient.tell(new InvokeRpcMessageReply(nodeMessageReply, domRpcResult.errors()), getSelf());
             }

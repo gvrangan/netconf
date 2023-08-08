@@ -13,14 +13,18 @@ import akka.actor.ActorSystem;
 import akka.util.Timeout;
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.util.concurrent.FutureCallback;
-import com.google.common.util.concurrent.ListeningExecutorService;
 import com.google.common.util.concurrent.MoreExecutors;
+import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import io.netty.util.concurrent.EventExecutor;
 import java.time.Duration;
 import java.util.Collection;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.Executor;
 import java.util.concurrent.ScheduledExecutorService;
+import javax.annotation.PreDestroy;
+import javax.inject.Inject;
+import javax.inject.Singleton;
 import org.opendaylight.aaa.encrypt.AAAEncryptionService;
 import org.opendaylight.controller.cluster.ActorSystemProvider;
 import org.opendaylight.controller.config.threadpool.ScheduledThreadPool;
@@ -34,26 +38,23 @@ import org.opendaylight.mdsal.binding.api.RpcProviderService;
 import org.opendaylight.mdsal.binding.api.WriteTransaction;
 import org.opendaylight.mdsal.common.api.CommitInfo;
 import org.opendaylight.mdsal.common.api.LogicalDatastoreType;
-import org.opendaylight.mdsal.dom.api.DOMActionProviderService;
 import org.opendaylight.mdsal.dom.api.DOMMountPointService;
-import org.opendaylight.mdsal.dom.api.DOMRpcProviderService;
 import org.opendaylight.mdsal.singleton.common.api.ClusterSingletonServiceProvider;
 import org.opendaylight.mdsal.singleton.common.api.ClusterSingletonServiceRegistration;
 import org.opendaylight.mdsal.singleton.common.api.ServiceGroupIdentifier;
 import org.opendaylight.netconf.client.NetconfClientDispatcher;
-import org.opendaylight.netconf.sal.connect.api.DeviceActionFactory;
-import org.opendaylight.netconf.sal.connect.api.RemoteDeviceId;
-import org.opendaylight.netconf.sal.connect.api.SchemaResourceManager;
-import org.opendaylight.netconf.sal.connect.netconf.schema.mapping.BaseNetconfSchemas;
-import org.opendaylight.netconf.topology.singleton.api.NetconfTopologySingletonService;
+import org.opendaylight.netconf.client.mdsal.api.BaseNetconfSchemas;
+import org.opendaylight.netconf.client.mdsal.api.DeviceActionFactory;
+import org.opendaylight.netconf.client.mdsal.api.RemoteDeviceId;
+import org.opendaylight.netconf.client.mdsal.api.SchemaResourceManager;
 import org.opendaylight.netconf.topology.singleton.impl.utils.NetconfTopologySetup;
 import org.opendaylight.netconf.topology.singleton.impl.utils.NetconfTopologySetup.NetconfTopologySetupBuilder;
 import org.opendaylight.netconf.topology.singleton.impl.utils.NetconfTopologyUtils;
+import org.opendaylight.netconf.topology.spi.NetconfClientConfigurationBuilderFactory;
 import org.opendaylight.netconf.topology.spi.NetconfNodeUtils;
 import org.opendaylight.netconf.topology.spi.NetconfTopologyRPCProvider;
 import org.opendaylight.yang.gen.v1.urn.opendaylight.netconf.node.topology.rev221225.NetconfNode;
 import org.opendaylight.yang.gen.v1.urn.opendaylight.netconf.node.topology.rev221225.NetconfNodeTopologyService;
-import org.opendaylight.yang.gen.v1.urn.opendaylight.netconf.topology.singleton.config.rev170419.Config;
 import org.opendaylight.yang.gen.v1.urn.tbd.params.xml.ns.yang.network.topology.rev131021.NetworkTopology;
 import org.opendaylight.yang.gen.v1.urn.tbd.params.xml.ns.yang.network.topology.rev131021.NodeId;
 import org.opendaylight.yang.gen.v1.urn.tbd.params.xml.ns.yang.network.topology.rev131021.TopologyId;
@@ -64,11 +65,32 @@ import org.opendaylight.yang.gen.v1.urn.tbd.params.xml.ns.yang.network.topology.
 import org.opendaylight.yangtools.concepts.ListenerRegistration;
 import org.opendaylight.yangtools.concepts.Registration;
 import org.opendaylight.yangtools.yang.binding.InstanceIdentifier;
+import org.opendaylight.yangtools.yang.common.Uint16;
+import org.osgi.service.component.annotations.Activate;
+import org.osgi.service.component.annotations.Component;
+import org.osgi.service.component.annotations.Deactivate;
+import org.osgi.service.component.annotations.Reference;
+import org.osgi.service.metatype.annotations.AttributeDefinition;
+import org.osgi.service.metatype.annotations.Designate;
+import org.osgi.service.metatype.annotations.ObjectClassDefinition;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-public class NetconfTopologyManager
-        implements ClusteredDataTreeChangeListener<Node>, NetconfTopologySingletonService, AutoCloseable {
+@Singleton
+@Component(service = { }, configurationPid = "org.opendaylight.netconf.topology.singleton")
+@Designate(ocd = NetconfTopologyManager.Configuration.class)
+// Non-final for testing
+public class NetconfTopologyManager implements ClusteredDataTreeChangeListener<Node>, AutoCloseable {
+    @ObjectClassDefinition
+    public @interface Configuration {
+        @AttributeDefinition(min = "1", description = "Name of the Network Topology instance to manage")
+        String topology$_$id() default "topology-netconf";
+
+        @AttributeDefinition(min = "0", max = "65535",
+            description = "Idle time in seconds after which write transaction is cancelled automatically. If 0, "
+                + "automatic cancellation is turned off.")
+        int write$_$transaction$_$idle$_$timeout() default 0;
+    }
 
     private static final Logger LOG = LoggerFactory.getLogger(NetconfTopologyManager.class);
 
@@ -78,11 +100,9 @@ public class NetconfTopologyManager
 
     private final BaseNetconfSchemas baseSchemas;
     private final DataBroker dataBroker;
-    private final DOMRpcProviderService rpcProviderRegistry;
-    private final DOMActionProviderService actionProviderRegistry;
     private final ClusterSingletonServiceProvider clusterSingletonServiceProvider;
     private final ScheduledExecutorService keepaliveExecutor;
-    private final ListeningExecutorService processingExecutor;
+    private final Executor processingExecutor;
     private final ActorSystem actorSystem;
     private final EventExecutor eventExecutor;
     private final NetconfClientDispatcher clientDispatcher;
@@ -92,47 +112,79 @@ public class NetconfTopologyManager
     private final AAAEncryptionService encryptionService;
     private final RpcProviderService rpcProviderService;
     private final DeviceActionFactory deviceActionFactory;
+    private final NetconfClientConfigurationBuilderFactory builderFactory;
     private final SchemaResourceManager resourceManager;
 
     private ListenerRegistration<NetconfTopologyManager> dataChangeListenerRegistration;
     private Registration rpcReg;
-    private String privateKeyPath;
-    private String privateKeyPassphrase;
 
+    @Activate
+    public NetconfTopologyManager(@Reference final BaseNetconfSchemas baseSchemas,
+            @Reference final DataBroker dataBroker,
+            @Reference final ClusterSingletonServiceProvider clusterSingletonServiceProvider,
+            @Reference(target = "(type=global-netconf-ssh-scheduled-executor)")
+                final ScheduledThreadPool keepaliveExecutor,
+            @Reference(target = "(type=global-netconf-processing-executor)") final ThreadPool processingExecutor,
+            @Reference final ActorSystemProvider actorSystemProvider,
+            @Reference(target = "(type=global-event-executor)") final EventExecutor eventExecutor,
+            @Reference(target = "(type=netconf-client-dispatcher)") final NetconfClientDispatcher clientDispatcher,
+            @Reference final DOMMountPointService mountPointService,
+            @Reference final AAAEncryptionService encryptionService,
+            @Reference final RpcProviderService rpcProviderService,
+            @Reference final DeviceActionFactory deviceActionFactory,
+            @Reference final SchemaResourceManager resourceManager,
+            @Reference final NetconfClientConfigurationBuilderFactory builderFactory,
+            final Configuration configuration) {
+        this(baseSchemas, dataBroker, clusterSingletonServiceProvider, keepaliveExecutor.getExecutor(),
+            processingExecutor.getExecutor(), actorSystemProvider.getActorSystem(), eventExecutor, clientDispatcher,
+            mountPointService, encryptionService, rpcProviderService, deviceActionFactory, resourceManager,
+            builderFactory, configuration.topology$_$id(),
+            Uint16.valueOf(configuration.write$_$transaction$_$idle$_$timeout()));
+    }
+
+    @Inject
     public NetconfTopologyManager(final BaseNetconfSchemas baseSchemas, final DataBroker dataBroker,
-                                  final DOMRpcProviderService rpcProviderRegistry,
-                                  final DOMActionProviderService actionProviderService,
-                                  final ClusterSingletonServiceProvider clusterSingletonServiceProvider,
-                                  final ScheduledThreadPool keepaliveExecutor, final ThreadPool processingExecutor,
-                                  final ActorSystemProvider actorSystemProvider,
-                                  final EventExecutor eventExecutor, final NetconfClientDispatcher clientDispatcher,
-                                  final String topologyId, final Config config,
-                                  final DOMMountPointService mountPointService,
-                                  final AAAEncryptionService encryptionService,
-                                  final RpcProviderService rpcProviderService,
-                                  final DeviceActionFactory deviceActionFactory,
-                                  final SchemaResourceManager resourceManager) {
+            final ClusterSingletonServiceProvider clusterSingletonServiceProvider,
+            final ScheduledThreadPool keepaliveExecutor, final ThreadPool processingExecutor,
+            final ActorSystemProvider actorSystemProvider, final EventExecutor eventExecutor,
+            final NetconfClientDispatcher clientDispatcher, final DOMMountPointService mountPointService,
+            final AAAEncryptionService encryptionService, final RpcProviderService rpcProviderService,
+            final DeviceActionFactory deviceActionFactory, final SchemaResourceManager resourceManager,
+            final NetconfClientConfigurationBuilderFactory builderFactory) {
+        this(baseSchemas, dataBroker, clusterSingletonServiceProvider, keepaliveExecutor.getExecutor(),
+            processingExecutor.getExecutor(), actorSystemProvider.getActorSystem(), eventExecutor, clientDispatcher,
+            mountPointService, encryptionService, rpcProviderService, deviceActionFactory, resourceManager,
+            builderFactory, NetconfNodeUtils.DEFAULT_TOPOLOGY_NAME, Uint16.ZERO);
+    }
+
+    @SuppressFBWarnings(value = "MC_OVERRIDABLE_METHOD_CALL_IN_CONSTRUCTOR",
+        justification = "Non-final for mocking, but we register for DTCL and that leaks 'this'")
+    public NetconfTopologyManager(final BaseNetconfSchemas baseSchemas, final DataBroker dataBroker,
+            final ClusterSingletonServiceProvider clusterSingletonServiceProvider,
+            final ScheduledExecutorService keepaliveExecutor, final Executor processingExecutor,
+            final ActorSystem actorSystem, final EventExecutor eventExecutor,
+            final NetconfClientDispatcher clientDispatcher, final DOMMountPointService mountPointService,
+            final AAAEncryptionService encryptionService, final RpcProviderService rpcProviderService,
+            final DeviceActionFactory deviceActionFactory, final SchemaResourceManager resourceManager,
+            final NetconfClientConfigurationBuilderFactory builderFactory, final String topologyId,
+            final Uint16 writeTransactionIdleTimeout) {
         this.baseSchemas = requireNonNull(baseSchemas);
         this.dataBroker = requireNonNull(dataBroker);
-        this.rpcProviderRegistry = requireNonNull(rpcProviderRegistry);
-        actionProviderRegistry = requireNonNull(actionProviderService);
         this.clusterSingletonServiceProvider = requireNonNull(clusterSingletonServiceProvider);
-        this.keepaliveExecutor = keepaliveExecutor.getExecutor();
-        this.processingExecutor = MoreExecutors.listeningDecorator(processingExecutor.getExecutor());
-        actorSystem = requireNonNull(actorSystemProvider).getActorSystem();
+        this.keepaliveExecutor = requireNonNull(keepaliveExecutor);
+        this.processingExecutor = requireNonNull(processingExecutor);
+        this.actorSystem = requireNonNull(actorSystem);
         this.eventExecutor = requireNonNull(eventExecutor);
         this.clientDispatcher = requireNonNull(clientDispatcher);
         this.topologyId = requireNonNull(topologyId);
-        writeTxIdleTimeout = Duration.ofSeconds(config.getWriteTransactionIdleTimeout().toJava());
+        writeTxIdleTimeout = Duration.ofSeconds(writeTransactionIdleTimeout.toJava());
         this.mountPointService = mountPointService;
         this.encryptionService = requireNonNull(encryptionService);
         this.rpcProviderService = requireNonNull(rpcProviderService);
         this.deviceActionFactory = requireNonNull(deviceActionFactory);
         this.resourceManager = requireNonNull(resourceManager);
-    }
+        this.builderFactory = requireNonNull(builderFactory);
 
-    // Blueprint init method
-    public void init() {
         dataChangeListenerRegistration = registerDataTreeChangeListener();
         rpcReg = rpcProviderService.registerRpcImplementation(NetconfNodeTopologyService.class,
             new NetconfTopologyRPCProvider(dataBroker, encryptionService, topologyId));
@@ -223,10 +275,12 @@ public class NetconfTopologyManager
     protected NetconfTopologyContext newNetconfTopologyContext(final NetconfTopologySetup setup,
             final ServiceGroupIdentifier serviceGroupIdent, final Timeout actorResponseWaitTime,
             final DeviceActionFactory deviceActionFact) {
-        return new NetconfTopologyContext(setup, serviceGroupIdent, actorResponseWaitTime, mountPointService,
-            deviceActionFact);
+        return new NetconfTopologyContext(resourceManager, mountPointService, builderFactory, deviceActionFactory,
+            actorResponseWaitTime, serviceGroupIdent, setup);
     }
 
+    @PreDestroy
+    @Deactivate
     @Override
     public void close() {
         if (rpcReg != null) {
@@ -252,20 +306,6 @@ public class NetconfTopologyManager
         } catch (Exception e) {
             LOG.warn("Error closing {}", closeable, e);
         }
-    }
-
-    /**
-     * Sets the private key path from location specified in configuration file using blueprint.
-     */
-    public void setPrivateKeyPath(final String privateKeyPath) {
-        this.privateKeyPath = privateKeyPath;
-    }
-
-    /**
-     * Sets the private key passphrase from location specified in configuration file using blueprint.
-     */
-    public void setPrivateKeyPassphrase(final String privateKeyPassphrase) {
-        this.privateKeyPassphrase = privateKeyPassphrase;
     }
 
     private ListenerRegistration<NetconfTopologyManager> registerDataTreeChangeListener() {
@@ -302,8 +342,6 @@ public class NetconfTopologyManager
                 .setBaseSchemas(baseSchemas)
                 .setDataBroker(dataBroker)
                 .setInstanceIdentifier(instanceIdentifier)
-                .setRpcProviderRegistry(rpcProviderRegistry)
-                .setActionProviderRegistry(actionProviderRegistry)
                 .setNode(node)
                 .setActorSystem(actorSystem)
                 .setEventExecutor(eventExecutor)
@@ -314,7 +352,6 @@ public class NetconfTopologyManager
                 .setSchemaResourceDTO(resourceManager.getSchemaResources(netconfNode.getSchemaCacheDirectory(),
                     deviceId))
                 .setIdleTimeout(writeTxIdleTimeout)
-                .setEncryptionService(encryptionService)
                 .build();
     }
 }

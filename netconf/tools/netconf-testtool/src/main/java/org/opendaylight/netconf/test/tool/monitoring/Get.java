@@ -9,12 +9,14 @@ package org.opendaylight.netconf.test.tool.monitoring;
 
 import java.util.Map;
 import org.opendaylight.netconf.api.DocumentedException;
-import org.opendaylight.netconf.api.monitoring.NetconfMonitoringService;
+import org.opendaylight.netconf.api.NamespaceURN;
 import org.opendaylight.netconf.api.xml.XmlElement;
 import org.opendaylight.netconf.api.xml.XmlNetconfConstants;
-import org.opendaylight.netconf.mapping.api.HandlingPriority;
-import org.opendaylight.netconf.mapping.api.NetconfOperationChainedExecution;
-import org.opendaylight.netconf.util.mapping.AbstractNetconfOperation;
+import org.opendaylight.netconf.server.api.monitoring.NetconfMonitoringService;
+import org.opendaylight.netconf.server.api.operations.AbstractNetconfOperation;
+import org.opendaylight.netconf.server.api.operations.HandlingPriority;
+import org.opendaylight.netconf.server.api.operations.NetconfOperationChainedExecution;
+import org.opendaylight.yang.gen.v1.urn.ietf.params.xml.ns.netconf.base._1._0.rev110601.SessionIdType;
 import org.opendaylight.yangtools.yang.common.ErrorSeverity;
 import org.opendaylight.yangtools.yang.common.ErrorTag;
 import org.opendaylight.yangtools.yang.common.ErrorType;
@@ -24,12 +26,12 @@ import org.w3c.dom.Document;
 import org.w3c.dom.Element;
 
 public class Get extends AbstractNetconfOperation {
-
     private static final Logger LOG = LoggerFactory.getLogger(Get.class);
+
     private final NetconfMonitoringService netconfMonitor;
 
-    public Get(final NetconfMonitoringService netconfMonitor) {
-        super(MonitoringConstants.MODULE_NAME);
+    public Get(final SessionIdType sessionId, final NetconfMonitoringService netconfMonitor) {
+        super(sessionId);
         this.netconfMonitor = netconfMonitor;
     }
 
@@ -82,7 +84,7 @@ public class Get extends AbstractNetconfOperation {
 
     private static Element getPlaceholder(final Document innerResult) throws DocumentedException {
         return XmlElement.fromDomElementWithExpected(innerResult.getDocumentElement(),
-            XmlNetconfConstants.RPC_REPLY_KEY, XmlNetconfConstants.URN_IETF_PARAMS_XML_NS_NETCONF_BASE_1_0)
+            XmlNetconfConstants.RPC_REPLY_KEY, NamespaceURN.BASE)
             .getOnlyChildElement(XmlNetconfConstants.DATA_KEY)
             .getDomElement();
     }

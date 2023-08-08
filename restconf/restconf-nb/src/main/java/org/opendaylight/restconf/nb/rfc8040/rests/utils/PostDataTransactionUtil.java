@@ -8,29 +8,23 @@
 package org.opendaylight.restconf.nb.rfc8040.rests.utils;
 
 import com.google.common.util.concurrent.FluentFuture;
+import com.google.common.util.concurrent.ListenableFuture;
 import java.net.URI;
-import java.util.Collection;
-import java.util.Optional;
 import javax.ws.rs.core.Response;
-import javax.ws.rs.core.Response.Status;
 import javax.ws.rs.core.UriInfo;
 import org.opendaylight.mdsal.common.api.CommitInfo;
 import org.opendaylight.mdsal.common.api.LogicalDatastoreType;
 import org.opendaylight.mdsal.dom.api.DOMTransactionChain;
-import org.opendaylight.restconf.api.query.InsertParam;
 import org.opendaylight.restconf.api.query.PointParam;
-import org.opendaylight.restconf.common.context.InstanceIdentifierContext;
 import org.opendaylight.restconf.common.errors.RestconfDocumentedException;
 import org.opendaylight.restconf.nb.rfc8040.WriteDataParams;
-import org.opendaylight.restconf.nb.rfc8040.legacy.NormalizedNodePayload;
 import org.opendaylight.restconf.nb.rfc8040.rests.transactions.RestconfStrategy;
 import org.opendaylight.restconf.nb.rfc8040.rests.transactions.RestconfTransaction;
 import org.opendaylight.restconf.nb.rfc8040.utils.parser.IdentifierCodec;
-import org.opendaylight.restconf.nb.rfc8040.utils.parser.ParserIdentifier;
+import org.opendaylight.restconf.nb.rfc8040.utils.parser.YangInstanceIdentifierDeserializer;
 import org.opendaylight.yangtools.yang.common.ErrorTag;
 import org.opendaylight.yangtools.yang.common.ErrorType;
 import org.opendaylight.yangtools.yang.data.api.YangInstanceIdentifier;
-import org.opendaylight.yangtools.yang.data.api.schema.MapEntryNode;
 import org.opendaylight.yangtools.yang.data.api.schema.MapNode;
 import org.opendaylight.yangtools.yang.data.api.schema.NormalizedNode;
 import org.opendaylight.yangtools.yang.data.api.schema.NormalizedNodeContainer;
@@ -56,23 +50,17 @@ public final class PostDataTransactionUtil {
      * {@link RestconfStrategy} provided as a parameter.
      *
      * @param uriInfo       uri info
-     * @param payload       data
+     * @param path          path
+     * @param data          data
      * @param strategy      Object that perform the actual DS operations
      * @param schemaContext reference to actual {@link EffectiveModelContext}
      * @param params        {@link WriteDataParams}
      * @return {@link Response}
      */
-    public static Response postData(final UriInfo uriInfo, final NormalizedNodePayload payload,
-                                    final RestconfStrategy strategy,
-                                    final EffectiveModelContext schemaContext, final WriteDataParams params) {
-        final YangInstanceIdentifier path = payload.getInstanceIdentifierContext().getInstanceIdentifier();
-        final FluentFuture<? extends CommitInfo> future = submitData(path, payload.getData(),
-                strategy, schemaContext, params);
-        final URI location = resolveLocation(uriInfo, path, schemaContext, payload.getData());
-        final ResponseFactory dataFactory = new ResponseFactory(Status.CREATED).location(location);
-        //This method will close transactionChain if any
-        FutureCallbackTx.addCallback(future, POST_TX_TYPE, dataFactory, path);
-        return dataFactory.build();
+    public static Response postData(final UriInfo uriInfo, final YangInstanceIdentifier path, final NormalizedNode data,
+            final RestconfStrategy strategy, final EffectiveModelContext schemaContext, final WriteDataParams params) {
+        TransactionUtil.syncCommit(submitData(path, data, strategy, schemaContext, params), POST_TX_TYPE, path);
+        return Response.created(resolveLocation(uriInfo, path, schemaContext, data)).build();
     }
 
     /**
@@ -86,74 +74,67 @@ public final class PostDataTransactionUtil {
      * @param insert        query parameter
      * @return {@link FluentFuture}
      */
-    private static FluentFuture<? extends CommitInfo> submitData(final YangInstanceIdentifier path,
-                                                                 final NormalizedNode data,
-                                                                 final RestconfStrategy strategy,
-                                                                 final EffectiveModelContext schemaContext,
-                                                                 final WriteDataParams params) {
-        final RestconfTransaction transaction = strategy.prepareWriteExecution();
-        final InsertParam insert = params.insert();
+    private static ListenableFuture<? extends CommitInfo> submitData(final YangInstanceIdentifier path,
+            final NormalizedNode data, final RestconfStrategy strategy, final EffectiveModelContext schemaContext,
+            final WriteDataParams params) {
+        final var transaction = strategy.prepareWriteExecution();
+        final var insert = params.insert();
         if (insert == null) {
-            makePost(path, data, schemaContext, transaction);
-            return transaction.commit();
+            return makePost(path, data, schemaContext, transaction);
         }
 
-        PutDataTransactionUtil.checkListAndOrderedType(schemaContext, path);
-        final NormalizedNode readData;
-        switch (insert) {
-            case FIRST:
-                readData = PutDataTransactionUtil.readList(strategy, path.getParent().getParent());
-                if (readData == null || ((NormalizedNodeContainer<?>) readData).isEmpty()) {
+        final var parentPath = path.coerceParent();
+        PutDataTransactionUtil.checkListAndOrderedType(schemaContext, parentPath);
+        final var grandParentPath = parentPath.coerceParent();
+
+        return switch (insert) {
+            case FIRST -> {
+                final var readData = transaction.readList(grandParentPath);
+                if (readData == null || readData.isEmpty()) {
                     transaction.replace(path, data, schemaContext);
-                    return transaction.commit();
-                }
-                checkItemDoesNotExists(strategy.exists(LogicalDatastoreType.CONFIGURATION, path), path);
-                transaction.remove(path.getParent().getParent());
-                transaction.replace(path, data, schemaContext);
-                transaction.replace(path.getParent().getParent(), readData, schemaContext);
-                return transaction.commit();
-            case LAST:
-                makePost(path, data, schemaContext, transaction);
-                return transaction.commit();
-            case BEFORE:
-                readData = PutDataTransactionUtil.readList(strategy, path.getParent().getParent());
-                if (readData == null || ((NormalizedNodeContainer<?>) readData).isEmpty()) {
+                } else {
+                    checkItemDoesNotExists(strategy.exists(LogicalDatastoreType.CONFIGURATION, path), path);
+                    transaction.remove(grandParentPath);
                     transaction.replace(path, data, schemaContext);
-                    return transaction.commit();
+                    transaction.replace(grandParentPath, readData, schemaContext);
                 }
-                checkItemDoesNotExists(strategy.exists(LogicalDatastoreType.CONFIGURATION, path), path);
-                insertWithPointPost(path, data, schemaContext, params.getPoint(),
-                    (NormalizedNodeContainer<?>) readData, true, transaction);
-                return transaction.commit();
-            case AFTER:
-                readData = PutDataTransactionUtil.readList(strategy, path.getParent().getParent());
-                if (readData == null || ((NormalizedNodeContainer<?>) readData).isEmpty()) {
+                yield transaction.commit();
+            }
+            case LAST -> makePost(path, data, schemaContext, transaction);
+            case BEFORE -> {
+                final var readData = transaction.readList(grandParentPath);
+                if (readData == null || readData.isEmpty()) {
                     transaction.replace(path, data, schemaContext);
-                    return transaction.commit();
+                } else {
+                    checkItemDoesNotExists(strategy.exists(LogicalDatastoreType.CONFIGURATION, path), path);
+                    insertWithPointPost(path, data, schemaContext, params.getPoint(), readData, true, transaction);
                 }
-                checkItemDoesNotExists(strategy.exists(LogicalDatastoreType.CONFIGURATION, path), path);
-                insertWithPointPost(path, data, schemaContext, params.getPoint(),
-                    (NormalizedNodeContainer<?>) readData, false, transaction);
-                return transaction.commit();
-            default:
-                throw new RestconfDocumentedException(
-                    "Used bad value of insert parameter. Possible values are first, last, before or after, but was: "
-                        + insert, ErrorType.PROTOCOL, ErrorTag.BAD_ATTRIBUTE);
-        }
+                yield transaction.commit();
+            }
+            case AFTER -> {
+                final var readData = transaction.readList(grandParentPath);
+                if (readData == null || readData.isEmpty()) {
+                    transaction.replace(path, data, schemaContext);
+                } else {
+                    checkItemDoesNotExists(strategy.exists(LogicalDatastoreType.CONFIGURATION, path), path);
+                    insertWithPointPost(path, data, schemaContext, params.getPoint(), readData, false, transaction);
+                }
+                yield transaction.commit();
+            }
+        };
     }
 
     private static void insertWithPointPost(final YangInstanceIdentifier path, final NormalizedNode data,
                                             final EffectiveModelContext schemaContext, final PointParam point,
                                             final NormalizedNodeContainer<?> readList, final boolean before,
                                             final RestconfTransaction transaction) {
-        final YangInstanceIdentifier parent = path.getParent().getParent();
+        final YangInstanceIdentifier parent = path.coerceParent().coerceParent();
         transaction.remove(parent);
-        final InstanceIdentifierContext instanceIdentifier =
-            // FIXME: Point should be able to give us this method
-            ParserIdentifier.toInstanceIdentifier(point.value(), schemaContext, Optional.empty());
+        final var pointArg = YangInstanceIdentifierDeserializer.create(schemaContext, point.value()).path
+            .getLastPathArgument();
         int lastItemPosition = 0;
-        for (final NormalizedNode nodeChild : readList.body()) {
-            if (nodeChild.getIdentifier().equals(instanceIdentifier.getInstanceIdentifier().getLastPathArgument())) {
+        for (var nodeChild : readList.body()) {
+            if (nodeChild.name().equals(pointArg)) {
                 break;
             }
             lastItemPosition++;
@@ -162,20 +143,21 @@ public final class PostDataTransactionUtil {
             lastItemPosition++;
         }
         int lastInsertedPosition = 0;
-        final NormalizedNode emptySubtree = ImmutableNodes.fromInstanceId(schemaContext, parent);
-        transaction.merge(YangInstanceIdentifier.create(emptySubtree.getIdentifier()), emptySubtree);
-        for (final NormalizedNode nodeChild : readList.body()) {
+        final var emptySubtree = ImmutableNodes.fromInstanceId(schemaContext, parent);
+        transaction.merge(YangInstanceIdentifier.of(emptySubtree.name()), emptySubtree);
+        for (var nodeChild : readList.body()) {
             if (lastInsertedPosition == lastItemPosition) {
                 transaction.replace(path, data, schemaContext);
             }
-            final YangInstanceIdentifier childPath = parent.node(nodeChild.getIdentifier());
+            final YangInstanceIdentifier childPath = parent.node(nodeChild.name());
             transaction.replace(childPath, nodeChild, schemaContext);
             lastInsertedPosition++;
         }
     }
 
-    private static void makePost(final YangInstanceIdentifier path, final NormalizedNode data,
-                                 final EffectiveModelContext schemaContext, final RestconfTransaction transaction) {
+    private static ListenableFuture<? extends CommitInfo> makePost(final YangInstanceIdentifier path,
+            final NormalizedNode data, final EffectiveModelContext schemaContext,
+            final RestconfTransaction transaction) {
         try {
             transaction.create(path, data, schemaContext);
         } catch (RestconfDocumentedException e) {
@@ -183,6 +165,8 @@ public final class PostDataTransactionUtil {
             transaction.cancel();
             throw e;
         }
+
+        return transaction.commit();
     }
 
     /**
@@ -200,10 +184,10 @@ public final class PostDataTransactionUtil {
         }
 
         YangInstanceIdentifier path = initialPath;
-        if (data instanceof MapNode) {
-            final Collection<MapEntryNode> children = ((MapNode) data).body();
+        if (data instanceof MapNode mapData) {
+            final var children = mapData.body();
             if (!children.isEmpty()) {
-                path = path.node(children.iterator().next().getIdentifier());
+                path = path.node(children.iterator().next().name());
             }
         }
 
@@ -211,21 +195,18 @@ public final class PostDataTransactionUtil {
     }
 
     /**
-     * Check if items do NOT already exists at specified {@code path}. Throws {@link RestconfDocumentedException} if
-     * data already exists.
+     * Check if items do NOT already exists at specified {@code path}.
      *
-     * @param isExistsFuture if checked data exists
-     * @param path           Path to be checked
+     * @param existsFuture if checked data exists
+     * @param path         Path to be checked
+     * @throws RestconfDocumentedException if data already exists.
      */
-    public static void checkItemDoesNotExists(final FluentFuture<Boolean> isExistsFuture,
+    public static void checkItemDoesNotExists(final ListenableFuture<Boolean> existsFuture,
                                               final YangInstanceIdentifier path) {
-        final FutureDataFactory<Boolean> response = new FutureDataFactory<>();
-        FutureCallbackTx.addCallback(isExistsFuture, POST_TX_TYPE, response);
-
-        if (response.result) {
+        if (TransactionUtil.syncAccess(existsFuture, path)) {
             LOG.trace("Operation via Restconf was not executed because data at {} already exists", path);
-            throw new RestconfDocumentedException(
-                "Data already exists", ErrorType.PROTOCOL, ErrorTag.DATA_EXISTS, path);
+            throw new RestconfDocumentedException("Data already exists", ErrorType.PROTOCOL, ErrorTag.DATA_EXISTS,
+                path);
         }
     }
 }

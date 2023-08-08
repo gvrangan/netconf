@@ -7,6 +7,8 @@
  */
 package org.opendaylight.netconf.api;
 
+import static java.util.Objects.requireNonNull;
+
 import java.io.StringWriter;
 import javax.xml.transform.OutputKeys;
 import javax.xml.transform.Transformer;
@@ -14,12 +16,12 @@ import javax.xml.transform.TransformerConfigurationException;
 import javax.xml.transform.TransformerException;
 import javax.xml.transform.dom.DOMSource;
 import javax.xml.transform.stream.StreamResult;
+import org.eclipse.jdt.annotation.NonNull;
 import org.opendaylight.netconf.api.xml.XmlUtil;
 import org.w3c.dom.Document;
 
 /**
- * NetconfMessage represents a wrapper around org.w3c.dom.Document. Needed for
- * implementing ProtocolMessage interface.
+ * NetconfMessage represents a wrapper around {@link Document}.
  */
 public class NetconfMessage {
     private static final Transformer TRANSFORMER;
@@ -36,25 +38,20 @@ public class NetconfMessage {
         TRANSFORMER = t;
     }
 
-    private final Document doc;
+    private final @NonNull Document document;
 
-    public NetconfMessage() {
-        // Required for FailedNetconfMessage
-        doc = null;
+    public NetconfMessage(final Document document) {
+        this.document = requireNonNull(document);
     }
 
-    public NetconfMessage(final Document doc) {
-        this.doc = doc;
-    }
-
-    public Document getDocument() {
-        return doc;
+    public final @NonNull Document getDocument() {
+        return document;
     }
 
     @Override
-    public String toString() {
-        final StreamResult result = new StreamResult(new StringWriter());
-        final DOMSource source = new DOMSource(doc.getDocumentElement());
+    public final String toString() {
+        final var result = new StreamResult(new StringWriter());
+        final var source = new DOMSource(document.getDocumentElement());
 
         try {
             // Slight critical section is a tradeoff. This should be reasonably fast.

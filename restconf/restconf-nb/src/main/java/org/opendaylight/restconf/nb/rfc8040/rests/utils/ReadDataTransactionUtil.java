@@ -26,17 +26,14 @@ import org.opendaylight.restconf.nb.rfc8040.rests.transactions.RestconfStrategy;
 import org.opendaylight.yangtools.yang.common.QName;
 import org.opendaylight.yangtools.yang.common.QNameModule;
 import org.opendaylight.yangtools.yang.data.api.YangInstanceIdentifier;
-import org.opendaylight.yangtools.yang.data.api.YangInstanceIdentifier.AugmentationIdentifier;
 import org.opendaylight.yangtools.yang.data.api.YangInstanceIdentifier.NodeIdentifier;
 import org.opendaylight.yangtools.yang.data.api.YangInstanceIdentifier.NodeIdentifierWithPredicates;
 import org.opendaylight.yangtools.yang.data.api.YangInstanceIdentifier.PathArgument;
-import org.opendaylight.yangtools.yang.data.api.schema.AugmentationNode;
 import org.opendaylight.yangtools.yang.data.api.schema.ChoiceNode;
 import org.opendaylight.yangtools.yang.data.api.schema.ContainerNode;
 import org.opendaylight.yangtools.yang.data.api.schema.DataContainerChild;
 import org.opendaylight.yangtools.yang.data.api.schema.LeafNode;
 import org.opendaylight.yangtools.yang.data.api.schema.LeafSetEntryNode;
-import org.opendaylight.yangtools.yang.data.api.schema.LeafSetNode;
 import org.opendaylight.yangtools.yang.data.api.schema.MapEntryNode;
 import org.opendaylight.yangtools.yang.data.api.schema.MapNode;
 import org.opendaylight.yangtools.yang.data.api.schema.NormalizedNode;
@@ -48,11 +45,9 @@ import org.opendaylight.yangtools.yang.data.api.schema.UserLeafSetNode;
 import org.opendaylight.yangtools.yang.data.api.schema.UserMapNode;
 import org.opendaylight.yangtools.yang.data.api.schema.builder.CollectionNodeBuilder;
 import org.opendaylight.yangtools.yang.data.api.schema.builder.DataContainerNodeBuilder;
-import org.opendaylight.yangtools.yang.data.api.schema.builder.ListNodeBuilder;
 import org.opendaylight.yangtools.yang.data.api.schema.builder.NormalizedNodeContainerBuilder;
 import org.opendaylight.yangtools.yang.data.impl.schema.Builders;
-import org.opendaylight.yangtools.yang.data.impl.schema.ImmutableNodes;
-import org.opendaylight.yangtools.yang.data.util.DataSchemaContextNode;
+import org.opendaylight.yangtools.yang.data.util.DataSchemaContext;
 import org.opendaylight.yangtools.yang.data.util.DataSchemaContextTree;
 import org.opendaylight.yangtools.yang.model.api.EffectiveModelContext;
 import org.opendaylight.yangtools.yang.model.api.LeafSchemaNode;
@@ -139,15 +134,15 @@ public final class ReadDataTransactionUtil {
 
         final var ctxNode = DataSchemaContextTree.from(ctx).findChild(path).orElseThrow();
         if (readData instanceof ContainerNode container) {
-            final var builder = Builders.containerBuilder().withNodeIdentifier(container.getIdentifier());
+            final var builder = Builders.containerBuilder().withNodeIdentifier(container.name());
             buildCont(builder, container.body(), ctxNode, trim);
             return builder.build();
         } else if (readData instanceof MapEntryNode mapEntry) {
-            if (!(ctxNode.getDataSchemaNode() instanceof ListSchemaNode listSchema)) {
+            if (!(ctxNode.dataSchemaNode() instanceof ListSchemaNode listSchema)) {
                 throw new IllegalStateException("Input " + mapEntry + " does not match " + ctxNode);
             }
 
-            final var builder = Builders.mapEntryBuilder().withNodeIdentifier(mapEntry.getIdentifier());
+            final var builder = Builders.mapEntryBuilder().withNodeIdentifier(mapEntry.name());
             buildMapEntryBuilder(builder, mapEntry.body(), ctxNode, trim, listSchema.getKeyDefinition());
             return builder.build();
         } else {
@@ -157,7 +152,7 @@ public final class ReadDataTransactionUtil {
 
     private static void buildMapEntryBuilder(
             final DataContainerNodeBuilder<NodeIdentifierWithPredicates, MapEntryNode> builder,
-            final Collection<@NonNull DataContainerChild> children, final DataSchemaContextNode<?> ctxNode,
+            final Collection<@NonNull DataContainerChild> children, final DataSchemaContext ctxNode,
             final boolean trim, final List<QName> keys) {
         for (var child : children) {
             final var childCtx = getChildContext(ctxNode, child);
@@ -176,15 +171,15 @@ public final class ReadDataTransactionUtil {
     }
 
     private static void appendContainer(final DataContainerNodeBuilder<?, ?> builder, final ContainerNode container,
-            final DataSchemaContextNode<?> ctxNode, final boolean trim) {
-        final var childBuilder = Builders.containerBuilder().withNodeIdentifier(container.getIdentifier());
+            final DataSchemaContext ctxNode, final boolean trim) {
+        final var childBuilder = Builders.containerBuilder().withNodeIdentifier(container.name());
         buildCont(childBuilder, container.body(), ctxNode, trim);
         builder.withChild(childBuilder.build());
     }
 
     private static void appendLeaf(final DataContainerNodeBuilder<?, ?> builder, final LeafNode<?> leaf,
-            final DataSchemaContextNode<?> ctxNode, final boolean trim, final List<QName> keys) {
-        if (!(ctxNode.getDataSchemaNode() instanceof LeafSchemaNode leafSchema)) {
+            final DataSchemaContext ctxNode, final boolean trim, final List<QName> keys) {
+        if (!(ctxNode.dataSchemaNode() instanceof LeafSchemaNode leafSchema)) {
             throw new IllegalStateException("Input " + leaf + " does not match " + ctxNode);
         }
 
@@ -209,13 +204,13 @@ public final class ReadDataTransactionUtil {
             //
             //            Data nodes set to the YANG default by the client are reported.
             //
-            //        and RFC8040 (https://datatracker.ietf.org/doc/html/rfc8040#page-60) says:
+            //        and RFC8040 (https://www.rfc-editor.org/rfc/rfc8040#page-60) says:
             //
             //            If the "with-defaults" parameter is set to "explicit", then the
             //            server MUST adhere to the default-reporting behavior defined in
             //            Section 3.3 of [RFC6243].
             //
-            //        and then RFC6243 says:
+            //        and then RFC6243 (https://www.rfc-editor.org/rfc/rfc6243#section-3.3) says:
             //
             //            When data is retrieved with a <with-defaults> parameter equal to
             //            'explicit', a data node that was set by a client to its schema
@@ -235,8 +230,8 @@ public final class ReadDataTransactionUtil {
     }
 
     private static void appendMap(final DataContainerNodeBuilder<?, ?> builder, final MapNode map,
-            final DataSchemaContextNode<?> childCtx, final boolean trim) {
-        if (!(childCtx.getDataSchemaNode() instanceof ListSchemaNode listSchema)) {
+            final DataSchemaContext childCtx, final boolean trim) {
+        if (!(childCtx.dataSchemaNode() instanceof ListSchemaNode listSchema)) {
             throw new IllegalStateException("Input " + map + " does not match " + childCtx);
         }
 
@@ -244,24 +239,24 @@ public final class ReadDataTransactionUtil {
             case SYSTEM -> Builders.mapBuilder();
             case USER -> Builders.orderedMapBuilder();
         };
-        buildList(childBuilder.withNodeIdentifier(map.getIdentifier()), map.body(), childCtx, trim,
+        buildList(childBuilder.withNodeIdentifier(map.name()), map.body(), childCtx, trim,
             listSchema.getKeyDefinition());
         builder.withChild(childBuilder.build());
     }
 
     private static void buildList(final CollectionNodeBuilder<MapEntryNode, ? extends MapNode> builder,
-            final Collection<@NonNull MapEntryNode> entries, final DataSchemaContextNode<?> ctxNode, final boolean trim,
+            final Collection<@NonNull MapEntryNode> entries, final DataSchemaContext ctxNode, final boolean trim,
             final List<@NonNull QName> keys) {
         for (var entry : entries) {
             final var childCtx = getChildContext(ctxNode, entry);
-            final var mapEntryBuilder = Builders.mapEntryBuilder().withNodeIdentifier(entry.getIdentifier());
+            final var mapEntryBuilder = Builders.mapEntryBuilder().withNodeIdentifier(entry.name());
             buildMapEntryBuilder(mapEntryBuilder, entry.body(), childCtx, trim, keys);
             builder.withChild(mapEntryBuilder.build());
         }
     }
 
     private static void buildCont(final DataContainerNodeBuilder<NodeIdentifier, ContainerNode> builder,
-            final Collection<DataContainerChild> children, final DataSchemaContextNode<?> ctxNode, final boolean trim) {
+            final Collection<DataContainerChild> children, final DataSchemaContext ctxNode, final boolean trim) {
         for (var child : children) {
             final var childCtx = getChildContext(ctxNode, child);
             if (child instanceof ContainerNode container) {
@@ -274,10 +269,11 @@ public final class ReadDataTransactionUtil {
         }
     }
 
-    private static @NonNull DataSchemaContextNode<?> getChildContext(final DataSchemaContextNode<?> ctxNode,
+    private static @NonNull DataSchemaContext getChildContext(final DataSchemaContext ctxNode,
             final NormalizedNode child) {
-        final var childId = child.getIdentifier();
-        final var childCtx = ctxNode.getChild(childId);
+        final var childId = child.name();
+        final var childCtx = ctxNode instanceof DataSchemaContext.Composite composite ? composite.childByArg(childId)
+            : null;
         if (childCtx == null) {
             throw new NoSuchElementException("Cannot resolve child " + childId + " in " + ctxNode);
         }
@@ -295,7 +291,7 @@ public final class ReadDataTransactionUtil {
      */
     static @Nullable NormalizedNode readDataViaTransaction(final @NonNull RestconfStrategy strategy,
             final LogicalDatastoreType store, final YangInstanceIdentifier path) {
-        return extractReadData(strategy, path, strategy.read(store, path));
+        return extractReadData(path, strategy.read(store, path));
     }
 
     /**
@@ -313,14 +309,12 @@ public final class ReadDataTransactionUtil {
     private static @Nullable NormalizedNode readDataViaTransaction(final @NonNull RestconfStrategy strategy,
             final @NonNull LogicalDatastoreType store, final @NonNull YangInstanceIdentifier path,
             final @NonNull List<YangInstanceIdentifier> fields) {
-        return extractReadData(strategy, path, strategy.read(store, path, fields));
+        return extractReadData(path, strategy.read(store, path, fields));
     }
 
-    private static NormalizedNode extractReadData(final RestconfStrategy strategy,
-            final YangInstanceIdentifier path, final ListenableFuture<Optional<NormalizedNode>> dataFuture) {
-        final NormalizedNodeFactory dataFactory = new NormalizedNodeFactory();
-        FutureCallbackTx.addCallback(dataFuture, "READ", dataFactory, path);
-        return dataFactory.build();
+    private static @Nullable NormalizedNode extractReadData(final YangInstanceIdentifier path,
+            final ListenableFuture<Optional<NormalizedNode>> dataFuture) {
+        return TransactionUtil.syncAccess(dataFuture, path).orElse(null);
     }
 
     /**
@@ -335,10 +329,9 @@ public final class ReadDataTransactionUtil {
     private static @Nullable NormalizedNode readAllData(final @NonNull RestconfStrategy strategy,
             final YangInstanceIdentifier path, final WithDefaultsParam withDefa, final EffectiveModelContext ctx) {
         // PREPARE STATE DATA NODE
-        final NormalizedNode stateDataNode = readDataViaTransaction(strategy, LogicalDatastoreType.OPERATIONAL, path);
+        final var stateDataNode = readDataViaTransaction(strategy, LogicalDatastoreType.OPERATIONAL, path);
         // PREPARE CONFIG DATA NODE
-        final NormalizedNode configDataNode = readDataViaTransaction(strategy, LogicalDatastoreType.CONFIGURATION,
-            path);
+        final var configDataNode = readDataViaTransaction(strategy, LogicalDatastoreType.CONFIGURATION, path);
 
         return mergeConfigAndSTateDataIfNeeded(stateDataNode,
             withDefa == null ? configDataNode : prepareDataByParamWithDef(configDataNode, path, withDefa, ctx));
@@ -359,12 +352,10 @@ public final class ReadDataTransactionUtil {
             final @NonNull YangInstanceIdentifier path, final @Nullable WithDefaultsParam withDefa,
             final @NonNull EffectiveModelContext ctx, final @NonNull List<YangInstanceIdentifier> fields) {
         // PREPARE STATE DATA NODE
-        final NormalizedNode stateDataNode = readDataViaTransaction(strategy, LogicalDatastoreType.OPERATIONAL, path,
-            fields);
-
+        final var stateDataNode = readDataViaTransaction(strategy, LogicalDatastoreType.OPERATIONAL, path, fields);
         // PREPARE CONFIG DATA NODE
-        final NormalizedNode configDataNode = readDataViaTransaction(strategy, LogicalDatastoreType.CONFIGURATION, path,
-            fields);
+        final var configDataNode = readDataViaTransaction(strategy, LogicalDatastoreType.CONFIGURATION, path, fields);
+
         return mergeConfigAndSTateDataIfNeeded(stateDataNode,
             withDefa == null ? configDataNode : prepareDataByParamWithDef(configDataNode, path, withDefa, ctx));
     }
@@ -400,6 +391,7 @@ public final class ReadDataTransactionUtil {
     private static @NonNull NormalizedNode mergeStateAndConfigData(
             final @NonNull NormalizedNode stateDataNode, final @NonNull NormalizedNode configDataNode) {
         validateNodeMerge(stateDataNode, configDataNode);
+        // FIXME: this check is bogus, as it confuses yang.data.api (NormalizedNode) with yang.model.api (RpcDefinition)
         if (configDataNode instanceof RpcDefinition) {
             return prepareRpcData(configDataNode, stateDataNode);
         } else {
@@ -415,8 +407,8 @@ public final class ReadDataTransactionUtil {
      */
     private static void validateNodeMerge(final @NonNull NormalizedNode stateDataNode,
                                           final @NonNull NormalizedNode configDataNode) {
-        final QNameModule moduleOfStateData = stateDataNode.getIdentifier().getNodeType().getModule();
-        final QNameModule moduleOfConfigData = configDataNode.getIdentifier().getNodeType().getModule();
+        final QNameModule moduleOfStateData = stateDataNode.name().getNodeType().getModule();
+        final QNameModule moduleOfConfigData = configDataNode.name().getNodeType().getModule();
         if (!moduleOfStateData.equals(moduleOfConfigData)) {
             throw new RestconfDocumentedException("Unable to merge data from different modules.");
         }
@@ -431,16 +423,16 @@ public final class ReadDataTransactionUtil {
      */
     private static @NonNull NormalizedNode prepareRpcData(final @NonNull NormalizedNode configDataNode,
                                                           final @NonNull NormalizedNode stateDataNode) {
-        final DataContainerNodeBuilder<NodeIdentifierWithPredicates, MapEntryNode> mapEntryBuilder = ImmutableNodes
-                .mapEntryBuilder();
-        mapEntryBuilder.withNodeIdentifier((NodeIdentifierWithPredicates) configDataNode.getIdentifier());
+        final var mapEntryBuilder = Builders.mapEntryBuilder()
+            .withNodeIdentifier((NodeIdentifierWithPredicates) configDataNode.name());
 
         // MAP CONFIG DATA
         mapRpcDataNode(configDataNode, mapEntryBuilder);
         // MAP STATE DATA
         mapRpcDataNode(stateDataNode, mapEntryBuilder);
 
-        return ImmutableNodes.mapNodeBuilder(configDataNode.getIdentifier().getNodeType())
+        return Builders.mapBuilder()
+            .withNodeIdentifier(NodeIdentifier.create(configDataNode.name().getNodeType()))
             .addChild(mapEntryBuilder.build())
             .build();
     }
@@ -466,88 +458,49 @@ public final class ReadDataTransactionUtil {
     @SuppressWarnings("unchecked")
     private static @NonNull NormalizedNode prepareData(final @NonNull NormalizedNode configDataNode,
                                                        final @NonNull NormalizedNode stateDataNode) {
-        if (configDataNode instanceof UserMapNode) {
-            final CollectionNodeBuilder<MapEntryNode, UserMapNode> builder = Builders
-                    .orderedMapBuilder().withNodeIdentifier(((MapNode) configDataNode).getIdentifier());
-
-            mapValueToBuilder(
-                    ((UserMapNode) configDataNode).body(), ((UserMapNode) stateDataNode).body(), builder);
-
+        if (configDataNode instanceof UserMapNode configMap) {
+            final var builder = Builders.orderedMapBuilder().withNodeIdentifier(configMap.name());
+            mapValueToBuilder(configMap.body(), ((UserMapNode) stateDataNode).body(), builder);
             return builder.build();
-        } else if (configDataNode instanceof MapNode) {
-            final CollectionNodeBuilder<MapEntryNode, SystemMapNode> builder = ImmutableNodes
-                    .mapNodeBuilder().withNodeIdentifier(((MapNode) configDataNode).getIdentifier());
-
-            mapValueToBuilder(
-                    ((MapNode) configDataNode).body(), ((MapNode) stateDataNode).body(), builder);
-
+        } else if (configDataNode instanceof SystemMapNode configMap) {
+            final var builder = Builders.mapBuilder().withNodeIdentifier(configMap.name());
+            mapValueToBuilder(configMap.body(), ((SystemMapNode) stateDataNode).body(), builder);
             return builder.build();
-        } else if (configDataNode instanceof MapEntryNode) {
-            final DataContainerNodeBuilder<NodeIdentifierWithPredicates, MapEntryNode> builder = ImmutableNodes
-                    .mapEntryBuilder().withNodeIdentifier(((MapEntryNode) configDataNode).getIdentifier());
-
-            mapValueToBuilder(
-                    ((MapEntryNode) configDataNode).body(), ((MapEntryNode) stateDataNode).body(), builder);
-
+        } else if (configDataNode instanceof MapEntryNode configEntry) {
+            final var builder = Builders.mapEntryBuilder().withNodeIdentifier(configEntry.name());
+            mapValueToBuilder(configEntry.body(), ((MapEntryNode) stateDataNode).body(), builder);
             return builder.build();
-        } else if (configDataNode instanceof ContainerNode) {
-            final DataContainerNodeBuilder<NodeIdentifier, ContainerNode> builder = Builders
-                    .containerBuilder().withNodeIdentifier(((ContainerNode) configDataNode).getIdentifier());
-
-            mapValueToBuilder(
-                    ((ContainerNode) configDataNode).body(), ((ContainerNode) stateDataNode).body(), builder);
-
+        } else if (configDataNode instanceof ContainerNode configContaienr) {
+            final var builder = Builders.containerBuilder().withNodeIdentifier(configContaienr.name());
+            mapValueToBuilder(configContaienr.body(), ((ContainerNode) stateDataNode).body(), builder);
             return builder.build();
-        } else if (configDataNode instanceof AugmentationNode) {
-            final DataContainerNodeBuilder<AugmentationIdentifier, AugmentationNode> builder = Builders
-                    .augmentationBuilder().withNodeIdentifier(((AugmentationNode) configDataNode).getIdentifier());
-
-            mapValueToBuilder(((AugmentationNode) configDataNode).body(),
-                    ((AugmentationNode) stateDataNode).body(), builder);
-
+        } else if (configDataNode instanceof ChoiceNode configChoice) {
+            final var builder = Builders.choiceBuilder().withNodeIdentifier(configChoice.name());
+            mapValueToBuilder(configChoice.body(), ((ChoiceNode) stateDataNode).body(), builder);
             return builder.build();
-        } else if (configDataNode instanceof ChoiceNode) {
-            final DataContainerNodeBuilder<NodeIdentifier, ChoiceNode> builder = Builders
-                    .choiceBuilder().withNodeIdentifier(((ChoiceNode) configDataNode).getIdentifier());
-
-            mapValueToBuilder(
-                    ((ChoiceNode) configDataNode).body(), ((ChoiceNode) stateDataNode).body(), builder);
-
-            return builder.build();
-        } else if (configDataNode instanceof LeafNode) {
-            return ImmutableNodes.leafNode(configDataNode.getIdentifier().getNodeType(), configDataNode.body());
+        } else if (configDataNode instanceof LeafNode configLeaf) {
+            // config trumps oper
+            return configLeaf;
         } else if (configDataNode instanceof UserLeafSetNode) {
-            final ListNodeBuilder<Object, UserLeafSetNode<Object>> builder = Builders
-                .orderedLeafSetBuilder().withNodeIdentifier(((UserLeafSetNode<?>) configDataNode).getIdentifier());
-
-            mapValueToBuilder(((UserLeafSetNode<Object>) configDataNode).body(),
-                    ((UserLeafSetNode<Object>) stateDataNode).body(), builder);
+            final var configLeafSet = (UserLeafSetNode<Object>) configDataNode;
+            final var builder = Builders.<Object>orderedLeafSetBuilder().withNodeIdentifier(configLeafSet.name());
+            mapValueToBuilder(configLeafSet.body(), ((UserLeafSetNode<Object>) stateDataNode).body(), builder);
             return builder.build();
-        } else if (configDataNode instanceof LeafSetNode) {
-            final ListNodeBuilder<Object, SystemLeafSetNode<Object>> builder = Builders
-                    .leafSetBuilder().withNodeIdentifier(((LeafSetNode<?>) configDataNode).getIdentifier());
-
-            mapValueToBuilder(((LeafSetNode<Object>) configDataNode).body(),
-                    ((LeafSetNode<Object>) stateDataNode).body(), builder);
+        } else if (configDataNode instanceof SystemLeafSetNode) {
+            final var configLeafSet = (SystemLeafSetNode<Object>) configDataNode;
+            final var builder = Builders.<Object>leafSetBuilder().withNodeIdentifier(configLeafSet.name());
+            mapValueToBuilder(configLeafSet.body(), ((SystemLeafSetNode<Object>) stateDataNode).body(), builder);
             return builder.build();
-        } else if (configDataNode instanceof LeafSetEntryNode) {
-            return Builders.leafSetEntryBuilder()
-                    .withNodeIdentifier(((LeafSetEntryNode<?>) configDataNode).getIdentifier())
-                    .withValue(configDataNode.body())
-                    .build();
-        } else if (configDataNode instanceof UnkeyedListNode) {
-            final CollectionNodeBuilder<UnkeyedListEntryNode, UnkeyedListNode> builder = Builders
-                    .unkeyedListBuilder().withNodeIdentifier(((UnkeyedListNode) configDataNode).getIdentifier());
-
-            mapValueToBuilder(((UnkeyedListNode) configDataNode).body(),
-                    ((UnkeyedListNode) stateDataNode).body(), builder);
+        } else if (configDataNode instanceof LeafSetEntryNode<?> configEntry) {
+            // config trumps oper
+            return configEntry;
+        } else if (configDataNode instanceof UnkeyedListNode configList) {
+            final var builder = Builders.unkeyedListBuilder().withNodeIdentifier(configList.name());
+            mapValueToBuilder(configList.body(), ((UnkeyedListNode) stateDataNode).body(), builder);
             return builder.build();
-        } else if (configDataNode instanceof UnkeyedListEntryNode) {
-            final DataContainerNodeBuilder<NodeIdentifier, UnkeyedListEntryNode> builder = Builders
-                .unkeyedListEntryBuilder().withNodeIdentifier(((UnkeyedListEntryNode) configDataNode).getIdentifier());
-
-            mapValueToBuilder(((UnkeyedListEntryNode) configDataNode).body(),
-                    ((UnkeyedListEntryNode) stateDataNode).body(), builder);
+        } else if (configDataNode instanceof UnkeyedListEntryNode configEntry) {
+            final var builder = Builders.unkeyedListEntryBuilder().withNodeIdentifier(configEntry.name());
+            mapValueToBuilder(configEntry.body(), ((UnkeyedListEntryNode) stateDataNode).body(), builder);
             return builder.build();
         } else {
             throw new RestconfDocumentedException("Unexpected node type: " + configDataNode.getClass().getName());
@@ -564,10 +517,8 @@ public final class ReadDataTransactionUtil {
     private static <T extends NormalizedNode> void mapValueToBuilder(
             final @NonNull Collection<T> configData, final @NonNull Collection<T> stateData,
             final @NonNull NormalizedNodeContainerBuilder<?, PathArgument, T, ?> builder) {
-        final Map<PathArgument, T> configMap = configData.stream().collect(
-                Collectors.toMap(NormalizedNode::getIdentifier, Function.identity()));
-        final Map<PathArgument, T> stateMap = stateData.stream().collect(
-                Collectors.toMap(NormalizedNode::getIdentifier, Function.identity()));
+        final var configMap = configData.stream().collect(Collectors.toMap(NormalizedNode::name, Function.identity()));
+        final var stateMap = stateData.stream().collect(Collectors.toMap(NormalizedNode::name, Function.identity()));
 
         // merge config and state data of children with different identifiers
         mapDataToBuilder(configMap, stateMap, builder);

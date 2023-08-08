@@ -8,27 +8,24 @@
 package org.opendaylight.netconf.server.osgi;
 
 import com.google.common.base.Preconditions;
-import com.google.common.collect.Collections2;
 import com.google.common.collect.ImmutableList;
-import com.google.common.collect.Maps;
-import java.util.Collection;
 import java.util.HashSet;
-import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 import org.opendaylight.controller.config.threadpool.ScheduledThreadPool;
-import org.opendaylight.netconf.api.monitoring.NetconfManagementSession;
-import org.opendaylight.netconf.api.monitoring.NetconfMonitoringService;
-import org.opendaylight.netconf.api.monitoring.SessionEvent;
-import org.opendaylight.netconf.api.monitoring.SessionListener;
+import org.opendaylight.netconf.server.api.monitoring.NetconfManagementSession;
+import org.opendaylight.netconf.server.api.monitoring.NetconfMonitoringService;
+import org.opendaylight.netconf.server.api.monitoring.SessionEvent;
+import org.opendaylight.netconf.server.api.monitoring.SessionListener;
 import org.opendaylight.yang.gen.v1.urn.ietf.params.xml.ns.yang.ietf.netconf.monitoring.rev101004.netconf.state.Sessions;
 import org.opendaylight.yang.gen.v1.urn.ietf.params.xml.ns.yang.ietf.netconf.monitoring.rev101004.netconf.state.SessionsBuilder;
 import org.opendaylight.yang.gen.v1.urn.ietf.params.xml.ns.yang.ietf.netconf.monitoring.rev101004.netconf.state.sessions.Session;
 import org.opendaylight.yangtools.concepts.AbstractRegistration;
 import org.opendaylight.yangtools.concepts.Registration;
+import org.opendaylight.yangtools.yang.binding.util.BindingMap;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -61,19 +58,18 @@ class NetconfSessionMonitoringService implements SessionListener, AutoCloseable 
             executor = schedulingThreadPool.orElseThrow().getExecutor();
             LOG.info("/netconf-state/sessions will be updated every {} seconds.", updateInterval);
         } else {
-            LOG.info("Scheduling thread pool is present = {}, "
-                    + "update interval {}: /netconf-state/sessions won't be updated.",
-                    schedulingThreadPool.isPresent(), updateInterval);
+            LOG.info(
+                "Scheduling thread pool is present = {}, update interval {}: /netconf-state/sessions won't be updated.",
+                schedulingThreadPool.isPresent(), updateInterval);
             executor = null;
         }
     }
 
     synchronized Sessions getSessions() {
-        final Collection<Session> managementSessions = Collections2.transform(sessions,
-                NetconfManagementSession::toManagementSession);
         return new SessionsBuilder()
-                .setSession(Maps.uniqueIndex(managementSessions, Session::key))
-                .build();
+            .setSession(BindingMap.of(
+                sessions.stream().map(NetconfManagementSession::toManagementSession).collect(Collectors.toList())))
+            .build();
     }
 
     @Override
@@ -122,12 +118,11 @@ class NetconfSessionMonitoringService implements SessionListener, AutoCloseable 
         if (changedSessions.isEmpty()) {
             return;
         }
-        final List<Session> changed = changedSessions.stream()
+        final var changed = changedSessions.stream()
                 .map(NetconfManagementSession::toManagementSession)
-                .collect(Collectors.toList());
-        final ImmutableList<Session> sessionImmutableList = ImmutableList.copyOf(changed);
+                .collect(ImmutableList.toImmutableList());
         for (NetconfMonitoringService.SessionsListener listener : listeners) {
-            listener.onSessionsUpdated(sessionImmutableList);
+            listener.onSessionsUpdated(changed);
         }
         changedSessions.clear();
     }

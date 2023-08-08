@@ -14,7 +14,6 @@ import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.mock;
 
 import com.google.common.collect.ImmutableClassToInstanceMap;
-import java.io.FileNotFoundException;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.util.Map;
@@ -34,14 +33,13 @@ import org.opendaylight.mdsal.dom.api.DOMDataTreeChangeService;
 import org.opendaylight.mdsal.dom.api.DOMDataTreeWriteTransaction;
 import org.opendaylight.mdsal.dom.api.DOMNotificationService;
 import org.opendaylight.restconf.common.errors.RestconfDocumentedException;
-import org.opendaylight.restconf.nb.rfc8040.TestRestconfUtils;
+import org.opendaylight.restconf.nb.rfc8040.URLConstants;
 import org.opendaylight.restconf.nb.rfc8040.databind.DatabindContext;
 import org.opendaylight.restconf.nb.rfc8040.databind.DatabindProvider;
 import org.opendaylight.restconf.nb.rfc8040.legacy.NormalizedNodePayload;
 import org.opendaylight.restconf.nb.rfc8040.streams.StreamsConfiguration;
 import org.opendaylight.restconf.nb.rfc8040.streams.listeners.ListenerAdapter;
 import org.opendaylight.restconf.nb.rfc8040.streams.listeners.ListenersBroker;
-import org.opendaylight.restconf.nb.rfc8040.utils.RestconfConstants;
 import org.opendaylight.restconf.nb.rfc8040.utils.parser.IdentifierCodec;
 import org.opendaylight.yang.gen.v1.urn.sal.restconf.event.subscription.rev140708.NotificationOutputTypeGrouping.NotificationOutputType;
 import org.opendaylight.yangtools.concepts.ListenerRegistration;
@@ -49,15 +47,15 @@ import org.opendaylight.yangtools.yang.common.ErrorTag;
 import org.opendaylight.yangtools.yang.common.ErrorType;
 import org.opendaylight.yangtools.yang.common.QName;
 import org.opendaylight.yangtools.yang.data.api.YangInstanceIdentifier;
-import org.opendaylight.yangtools.yang.data.api.YangInstanceIdentifier.NodeIdentifier;
 import org.opendaylight.yangtools.yang.model.api.EffectiveModelContext;
 import org.opendaylight.yangtools.yang.test.util.YangParserTestUtils;
 
 @RunWith(MockitoJUnitRunner.StrictStubs.class)
 public class RestconfStreamsSubscriptionServiceImplTest {
-
     private static final String URI = "/rests/data/ietf-restconf-monitoring:restconf-state/streams/stream/"
             + "toaster:toaster/toasterStatus/datastore=OPERATIONAL/scope=ONE";
+
+    private static EffectiveModelContext MODEL_CONTEXT;
 
     @Mock
     private DOMDataBroker dataBroker;
@@ -69,11 +67,15 @@ public class RestconfStreamsSubscriptionServiceImplTest {
     private StreamsConfiguration configurationWs;
     private StreamsConfiguration configurationSse;
 
-    private EffectiveModelContext modelContext;
     private DatabindProvider databindProvider;
 
+    @BeforeClass
+    public static void beforeClass() {
+        MODEL_CONTEXT = YangParserTestUtils.parseYangResourceDirectory("/notifications");
+    }
+
     @Before
-    public void setUp() throws FileNotFoundException, URISyntaxException {
+    public void setUp() throws URISyntaxException {
         final DOMDataTreeWriteTransaction wTx = mock(DOMDataTreeWriteTransaction.class);
         doReturn(wTx).when(dataBroker).newWriteOnlyTransaction();
         doReturn(CommitInfo.emptyFluentFuture()).when(wTx).commit();
@@ -89,8 +91,7 @@ public class RestconfStreamsSubscriptionServiceImplTest {
         doReturn(UriBuilder.fromUri("http://localhost:8181")).when(uriInfo).getBaseUriBuilder();
         doReturn(new URI("http://127.0.0.1/" + URI)).when(uriInfo).getAbsolutePath();
 
-        modelContext = YangParserTestUtils.parseYangFiles(TestRestconfUtils.loadFiles("/notifications"));
-        databindProvider = () -> DatabindContext.ofModel(modelContext);
+        databindProvider = () -> DatabindContext.ofModel(MODEL_CONTEXT);
         configurationWs = new StreamsConfiguration(0, 100, 10, false);
         configurationSse = new StreamsConfiguration(0, 100, 10, true);
     }
@@ -99,8 +100,8 @@ public class RestconfStreamsSubscriptionServiceImplTest {
     public static void setUpBeforeTest() {
         final String name =
             "data-change-event-subscription/toaster:toaster/toasterStatus/datastore=OPERATIONAL/scope=ONE";
-        final ListenerAdapter adapter = new ListenerAdapter(YangInstanceIdentifier.create(new NodeIdentifier(
-            QName.create("http://netconfcentral.org/ns/toaster", "2009-11-20", "toaster"))),
+        final ListenerAdapter adapter = new ListenerAdapter(YangInstanceIdentifier.of(
+            QName.create("http://netconfcentral.org/ns/toaster", "2009-11-20", "toaster")),
             name, NotificationOutputType.JSON);
         ListenersBroker.getInstance().setDataChangeListeners(Map.of(name, adapter));
     }
@@ -113,7 +114,7 @@ public class RestconfStreamsSubscriptionServiceImplTest {
     @Test
     public void testSubscribeToStreamSSE() {
         ListenersBroker.getInstance().registerDataChangeListener(
-                IdentifierCodec.deserialize("toaster:toaster/toasterStatus", modelContext),
+                IdentifierCodec.deserialize("toaster:toaster/toasterStatus", MODEL_CONTEXT),
                 "data-change-event-subscription/toaster:toaster/toasterStatus/datastore=OPERATIONAL/scope=ONE",
                 NotificationOutputType.XML);
         final RestconfStreamsSubscriptionServiceImpl streamsSubscriptionService =
@@ -121,16 +122,15 @@ public class RestconfStreamsSubscriptionServiceImplTest {
                         configurationSse);
         final NormalizedNodePayload response = streamsSubscriptionService.subscribeToStream(
             "data-change-event-subscription/toaster:toaster/toasterStatus/datastore=OPERATIONAL/scope=ONE", uriInfo);
-        assertEquals("http://localhost:8181/" + RestconfConstants.BASE_URI_PATTERN
-                + "/" + RestconfConstants.NOTIF
-                + "/data-change-event-subscription/toaster:toaster/toasterStatus/"
-                + "datastore=OPERATIONAL/scope=ONE", response.getNewHeaders().get("Location").toString());
+        assertEquals("http://localhost:8181/" + URLConstants.BASE_PATH + "/" + URLConstants.SSE_SUBPATH
+            + "/data-change-event-subscription/toaster:toaster/toasterStatus/datastore=OPERATIONAL/scope=ONE",
+            response.getNewHeaders().get("Location").toString());
     }
 
     @Test
     public void testSubscribeToStreamWS() {
         ListenersBroker.getInstance().registerDataChangeListener(
-                IdentifierCodec.deserialize("toaster:toaster/toasterStatus", modelContext),
+                IdentifierCodec.deserialize("toaster:toaster/toasterStatus", MODEL_CONTEXT),
                 "data-change-event-subscription/toaster:toaster/toasterStatus/datastore=OPERATIONAL/scope=ONE",
                 NotificationOutputType.XML);
         final RestconfStreamsSubscriptionServiceImpl streamsSubscriptionService =
@@ -138,9 +138,9 @@ public class RestconfStreamsSubscriptionServiceImplTest {
                         configurationWs);
         final NormalizedNodePayload response = streamsSubscriptionService.subscribeToStream(
             "data-change-event-subscription/toaster:toaster/toasterStatus/datastore=OPERATIONAL/scope=ONE", uriInfo);
-        assertEquals("ws://localhost:8181/" + RestconfConstants.BASE_URI_PATTERN
-                + "/data-change-event-subscription/toaster:toaster/toasterStatus/"
-                + "datastore=OPERATIONAL/scope=ONE", response.getNewHeaders().get("Location").toString());
+        assertEquals("ws://localhost:8181/" + URLConstants.BASE_PATH
+            + "/data-change-event-subscription/toaster:toaster/toasterStatus/datastore=OPERATIONAL/scope=ONE",
+            response.getNewHeaders().get("Location").toString());
     }
 
     @Test

@@ -10,44 +10,35 @@ package org.opendaylight.netconf.topology.singleton.impl.utils;
 import static java.util.Objects.requireNonNull;
 
 import akka.actor.ActorSystem;
-import com.google.common.util.concurrent.ListeningExecutorService;
 import io.netty.util.concurrent.EventExecutor;
 import java.time.Duration;
+import java.util.concurrent.Executor;
 import java.util.concurrent.ScheduledExecutorService;
-import org.opendaylight.aaa.encrypt.AAAEncryptionService;
 import org.opendaylight.mdsal.binding.api.DataBroker;
-import org.opendaylight.mdsal.dom.api.DOMActionProviderService;
-import org.opendaylight.mdsal.dom.api.DOMRpcProviderService;
 import org.opendaylight.mdsal.singleton.common.api.ClusterSingletonServiceProvider;
 import org.opendaylight.netconf.client.NetconfClientDispatcher;
-import org.opendaylight.netconf.sal.connect.netconf.NetconfDevice;
-import org.opendaylight.netconf.sal.connect.netconf.schema.mapping.BaseNetconfSchemas;
+import org.opendaylight.netconf.client.mdsal.NetconfDevice;
+import org.opendaylight.netconf.client.mdsal.api.BaseNetconfSchemas;
 import org.opendaylight.yang.gen.v1.urn.tbd.params.xml.ns.yang.network.topology.rev131021.network.topology.topology.Node;
 import org.opendaylight.yangtools.yang.binding.InstanceIdentifier;
 
 public class NetconfTopologySetup {
-
     private final ClusterSingletonServiceProvider clusterSingletonServiceProvider;
-    private final DOMRpcProviderService rpcProviderRegistry;
-    private final DOMActionProviderService actionProviderRegistry;
     private final DataBroker dataBroker;
     private final InstanceIdentifier<Node> instanceIdentifier;
     private final Node node;
     private final ScheduledExecutorService keepaliveExecutor;
-    private final ListeningExecutorService processingExecutor;
+    private final Executor processingExecutor;
     private final ActorSystem actorSystem;
     private final EventExecutor eventExecutor;
     private final NetconfClientDispatcher netconfClientDispatcher;
     private final String topologyId;
     private final NetconfDevice.SchemaResourcesDTO schemaResourceDTO;
     private final Duration idleTimeout;
-    private final AAAEncryptionService encryptionService;
     private final BaseNetconfSchemas baseSchemas;
 
     NetconfTopologySetup(final NetconfTopologySetupBuilder builder) {
         clusterSingletonServiceProvider = builder.getClusterSingletonServiceProvider();
-        rpcProviderRegistry = builder.getRpcProviderRegistry();
-        actionProviderRegistry = builder.getActionProviderRegistry();
         dataBroker = builder.getDataBroker();
         instanceIdentifier = builder.getInstanceIdentifier();
         node = builder.getNode();
@@ -59,20 +50,11 @@ public class NetconfTopologySetup {
         topologyId = builder.getTopologyId();
         schemaResourceDTO = builder.getSchemaResourceDTO();
         idleTimeout = builder.getIdleTimeout();
-        encryptionService = builder.getEncryptionService();
         baseSchemas = builder.getBaseSchemas();
     }
 
     public ClusterSingletonServiceProvider getClusterSingletonServiceProvider() {
         return clusterSingletonServiceProvider;
-    }
-
-    public DOMRpcProviderService getRpcProviderRegistry() {
-        return rpcProviderRegistry;
-    }
-
-    public DOMActionProviderService getActionProviderRegistry() {
-        return actionProviderRegistry;
     }
 
     public DataBroker getDataBroker() {
@@ -87,7 +69,7 @@ public class NetconfTopologySetup {
         return node;
     }
 
-    public ListeningExecutorService getProcessingExecutor() {
+    public Executor getProcessingExecutor() {
         return processingExecutor;
     }
 
@@ -119,30 +101,23 @@ public class NetconfTopologySetup {
         return idleTimeout;
     }
 
-    public AAAEncryptionService getEncryptionService() {
-        return encryptionService;
-    }
-
     public BaseNetconfSchemas getBaseSchemas() {
         return baseSchemas;
     }
 
     public static class NetconfTopologySetupBuilder {
         private ClusterSingletonServiceProvider clusterSingletonServiceProvider;
-        private DOMRpcProviderService rpcProviderRegistry;
-        private DOMActionProviderService actionProviderRegistry;
         private DataBroker dataBroker;
         private InstanceIdentifier<Node> instanceIdentifier;
         private Node node;
         private ScheduledExecutorService keepaliveExecutor;
-        private ListeningExecutorService processingExecutor;
+        private Executor processingExecutor;
         private ActorSystem actorSystem;
         private EventExecutor eventExecutor;
         private String topologyId;
         private NetconfClientDispatcher netconfClientDispatcher;
         private NetconfDevice.SchemaResourcesDTO schemaResourceDTO;
         private Duration idleTimeout;
-        private AAAEncryptionService encryptionService;
         private BaseNetconfSchemas baseSchemas;
 
         public NetconfTopologySetupBuilder() {
@@ -165,25 +140,6 @@ public class NetconfTopologySetup {
         public NetconfTopologySetupBuilder setClusterSingletonServiceProvider(
                 final ClusterSingletonServiceProvider clusterSingletonServiceProvider) {
             this.clusterSingletonServiceProvider = clusterSingletonServiceProvider;
-            return this;
-        }
-
-        DOMRpcProviderService getRpcProviderRegistry() {
-            return rpcProviderRegistry;
-        }
-
-        public NetconfTopologySetupBuilder setRpcProviderRegistry(final DOMRpcProviderService rpcProviderRegistry) {
-            this.rpcProviderRegistry = rpcProviderRegistry;
-            return this;
-        }
-
-        DOMActionProviderService getActionProviderRegistry() {
-            return actionProviderRegistry;
-        }
-
-        public NetconfTopologySetupBuilder setActionProviderRegistry(
-            final DOMActionProviderService actionProviderRegistry) {
-            this.actionProviderRegistry = actionProviderRegistry;
             return this;
         }
 
@@ -227,11 +183,11 @@ public class NetconfTopologySetup {
             return this;
         }
 
-        ListeningExecutorService getProcessingExecutor() {
+        Executor getProcessingExecutor() {
             return processingExecutor;
         }
 
-        public NetconfTopologySetupBuilder setProcessingExecutor(final ListeningExecutorService processingExecutor) {
+        public NetconfTopologySetupBuilder setProcessingExecutor(final Executor processingExecutor) {
             this.processingExecutor = processingExecutor;
             return this;
         }
@@ -289,15 +245,6 @@ public class NetconfTopologySetup {
 
         Duration getIdleTimeout() {
             return idleTimeout;
-        }
-
-        AAAEncryptionService getEncryptionService() {
-            return encryptionService;
-        }
-
-        public NetconfTopologySetupBuilder setEncryptionService(final AAAEncryptionService encryptionService) {
-            this.encryptionService = encryptionService;
-            return this;
         }
 
         public static NetconfTopologySetupBuilder create() {

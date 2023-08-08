@@ -8,13 +8,15 @@
 package org.opendaylight.netconf.server.mapping.operations;
 
 import org.opendaylight.netconf.api.DocumentedException;
+import org.opendaylight.netconf.api.NamespaceURN;
 import org.opendaylight.netconf.api.NetconfMessage;
 import org.opendaylight.netconf.api.xml.XmlElement;
 import org.opendaylight.netconf.api.xml.XmlNetconfConstants;
 import org.opendaylight.netconf.api.xml.XmlUtil;
-import org.opendaylight.netconf.mapping.api.NetconfOperationChainedExecution;
 import org.opendaylight.netconf.server.NetconfServerSession;
-import org.opendaylight.netconf.util.mapping.AbstractSingletonNetconfOperation;
+import org.opendaylight.netconf.server.api.operations.AbstractSingletonNetconfOperation;
+import org.opendaylight.netconf.server.api.operations.NetconfOperationChainedExecution;
+import org.opendaylight.yang.gen.v1.urn.ietf.params.xml.ns.netconf.base._1._0.rev110601.SessionIdType;
 import org.opendaylight.yangtools.yang.common.ErrorSeverity;
 import org.opendaylight.yangtools.yang.common.ErrorTag;
 import org.opendaylight.yangtools.yang.common.ErrorType;
@@ -29,8 +31,8 @@ public class DefaultStartExi extends AbstractSingletonNetconfOperation implement
     private static final Logger LOG = LoggerFactory.getLogger(DefaultStartExi.class);
     private NetconfServerSession netconfSession;
 
-    public DefaultStartExi(final String netconfSessionIdForReporting) {
-        super(netconfSessionIdForReporting);
+    public DefaultStartExi(final SessionIdType sessionId) {
+        super(sessionId);
     }
 
     @Override
@@ -53,8 +55,7 @@ public class DefaultStartExi extends AbstractSingletonNetconfOperation implement
     @Override
     protected Element handleWithNoSubsequentOperations(final Document document,
                                                        final XmlElement operationElement) {
-        final Element getSchemaResult = document.createElementNS(
-                XmlNetconfConstants.URN_IETF_PARAMS_XML_NS_NETCONF_BASE_1_0, XmlNetconfConstants.OK);
+        final Element getSchemaResult = document.createElementNS(NamespaceURN.BASE, XmlNetconfConstants.OK);
         LOG.trace("{} operation successful", START_EXI);
         return getSchemaResult;
     }
@@ -66,7 +67,7 @@ public class DefaultStartExi extends AbstractSingletonNetconfOperation implement
 
     @Override
     protected String getOperationNamespace() {
-        return XmlNetconfConstants.URN_IETF_PARAMS_XML_NS_NETCONF_EXI_1_0;
+        return NamespaceURN.EXI;
     }
 
     @Override

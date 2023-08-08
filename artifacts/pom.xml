@@ -14,22 +14,17 @@
     <parent>
       <groupId>org.opendaylight.odlparent</groupId>
       <artifactId>odlparent-lite</artifactId>
-      <version>12.0.5</version>
+      <version>13.0.3</version>
       <relativePath/>
     </parent>
 
     <groupId>org.opendaylight.netconf</groupId>
     <artifactId>netconf-artifacts</artifactId>
-    <version>6.0.0-SNAPSHOT</version>
+    <version>7.0.0-SNAPSHOT</version>
     <packaging>pom</packaging>
 
     <dependencyManagement>
         <dependencies>
-            <dependency>
-                <groupId>${project.groupId}</groupId>
-                <artifactId>aaa-authn-odl-plugin</artifactId>
-                <version>${project.version}</version>
-            </dependency>
             <dependency>
                 <groupId>${project.groupId}</groupId>
                 <artifactId>netconf-api</artifactId>
@@ -37,12 +32,12 @@
             </dependency>
             <dependency>
                 <groupId>${project.groupId}</groupId>
-                <artifactId>netconf-dom-api</artifactId>
+                <artifactId>netconf-auth</artifactId>
                 <version>${project.version}</version>
             </dependency>
             <dependency>
                 <groupId>${project.groupId}</groupId>
-                <artifactId>netconf-auth</artifactId>
+                <artifactId>netconf-auth-aaa</artifactId>
                 <version>${project.version}</version>
             </dependency>
             <dependency>
@@ -57,7 +52,17 @@
             </dependency>
             <dependency>
                 <groupId>${project.groupId}</groupId>
+                <artifactId>netconf-common-mdsal</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>${project.groupId}</groupId>
                 <artifactId>netconf-config</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>${project.groupId}</groupId>
+                <artifactId>netconf-dom-api</artifactId>
                 <version>${project.version}</version>
             </dependency>
             <dependency>
@@ -67,27 +72,18 @@
             </dependency>
             <dependency>
                 <groupId>${project.groupId}</groupId>
-                <artifactId>netconf-mapping-api</artifactId>
+                <artifactId>netconf-server-mdsal</artifactId>
                 <version>${project.version}</version>
             </dependency>
             <dependency>
                 <groupId>${project.groupId}</groupId>
-                <artifactId>mdsal-netconf-connector</artifactId>
+                <artifactId>netconf-test-util</artifactId>
                 <version>${project.version}</version>
-            </dependency>
-            <dependency>
-                <groupId>${project.groupId}</groupId>
-                <artifactId>mdsal-netconf-monitoring</artifactId>
-                <version>${project.version}</version>
+                <scope>test</scope>
             </dependency>
             <dependency>
                 <groupId>org.opendaylight.netconf</groupId>
                 <artifactId>mdsal-netconf-yang-library</artifactId>
-                <version>${project.version}</version>
-            </dependency>
-            <dependency>
-                <groupId>org.opendaylight.netconf</groupId>
-                <artifactId>mdsal-netconf-impl</artifactId>
                 <version>${project.version}</version>
             </dependency>
             <dependency>
@@ -107,19 +103,7 @@
             </dependency>
             <dependency>
                 <groupId>${project.groupId}</groupId>
-                <artifactId>netconf-util</artifactId>
-                <version>${project.version}</version>
-            </dependency>
-            <dependency>
-                <groupId>${project.groupId}</groupId>
-                <artifactId>netconf-util</artifactId>
-                <version>${project.version}</version>
-                <classifier>config</classifier>
-                <type>cfg</type>
-            </dependency>
-            <dependency>
-                <groupId>${project.groupId}</groupId>
-                <artifactId>sal-netconf-connector</artifactId>
+                <artifactId>netconf-client-mdsal</artifactId>
                 <version>${project.version}</version>
             </dependency>
 
@@ -143,6 +127,22 @@
                 <groupId>org.opendaylight.netconf</groupId>
                 <artifactId>transport-tls</artifactId>
                 <version>${project.version}</version>
+            </dependency>
+
+            <!-- NETCONF Transport features -->
+            <dependency>
+                <groupId>org.opendaylight.netconf</groupId>
+                <artifactId>odl-netconf-transport</artifactId>
+                <version>${project.version}</version>
+                <type>xml</type>
+                <classifier>features</classifier>
+            </dependency>
+            <dependency>
+                <groupId>org.opendaylight.netconf</groupId>
+                <artifactId>odl-netconf-transport-api</artifactId>
+                <version>${project.version}</version>
+                <type>xml</type>
+                <classifier>features</classifier>
             </dependency>
 
             <!-- YANG models -->
@@ -201,6 +201,24 @@
                 <artifactId>rfc8639</artifactId>
                 <version>${project.version}</version>
             </dependency>
+            <!-- RFC7407 A YANG Data Model for SNMP Configuration -->
+            <dependency>
+                <groupId>org.opendaylight.netconf.model</groupId>
+                <artifactId>rfc7407-ietf-x509-cert-to-name</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <!-- RFC8641 Subscription to YANG Notifications -->
+            <dependency>
+                <groupId>org.opendaylight.netconf.model</groupId>
+                <artifactId>rfc8641</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <!-- RFC8650 Dynamic Subscription to YANG Events and Datastores over RESTCONF -->
+            <dependency>
+                <groupId>org.opendaylight.netconf.model</groupId>
+                <artifactId>rfc8650</artifactId>
+                <version>${project.version}</version>
+            </dependency>
 
             <!-- draft-ietf-netconf-crypto-types -->
             <dependency>
@@ -228,6 +246,13 @@
                 <artifactId>keystore-none</artifactId>
                 <version>${project.version}</version>
             </dependency>
+            <dependency>
+                <groupId>org.opendaylight.netconf</groupId>
+                <artifactId>odl-netconf-keystore</artifactId>
+                <version>${project.version}</version>
+                <type>xml</type>
+                <classifier>features</classifier>
+            </dependency>
 
             <!-- Truststore API and implementations. This is a manifestation of draft-ietf-netconf-truststore. -->
             <dependency>
@@ -240,18 +265,18 @@
                 <artifactId>truststore-none</artifactId>
                 <version>${project.version}</version>
             </dependency>
+            <dependency>
+                <groupId>org.opendaylight.netconf</groupId>
+                <artifactId>odl-netconf-truststore</artifactId>
+                <version>${project.version}</version>
+                <type>xml</type>
+                <classifier>features</classifier>
+            </dependency>
 
             <dependency>
                 <groupId>org.opendaylight.netconf</groupId>
                 <artifactId>yanglib</artifactId>
                 <version>${project.version}</version>
-            </dependency>
-            <dependency>
-                <groupId>org.opendaylight.netconf</groupId>
-                <artifactId>yanglib</artifactId>
-                <version>${project.version}</version>
-                <classifier>config</classifier>
-                <type>xml</type>
             </dependency>
 
             <dependency>
@@ -272,22 +297,26 @@
 
             <dependency>
                 <groupId>${project.groupId}</groupId>
-                <artifactId>netconf-notifications-api</artifactId>
+                <artifactId>netconf-client</artifactId>
                 <version>${project.version}</version>
+                <type>test-jar</type>
             </dependency>
             <dependency>
                 <groupId>${project.groupId}</groupId>
-                <artifactId>mdsal-netconf-notification</artifactId>
+                <artifactId>netconf-netty-util</artifactId>
+                <version>${project.version}</version>
+                <type>test-jar</type>
+            </dependency>
+
+            <!-- Applications -->
+            <dependency>
+                <groupId>${project.groupId}</groupId>
+                <artifactId>netconf-console</artifactId>
                 <version>${project.version}</version>
             </dependency>
             <dependency>
-                <groupId>${project.groupId}</groupId>
-                <artifactId>mdsal-netconf-ssh</artifactId>
-                <version>${project.version}</version>
-            </dependency>
-            <dependency>
-                <groupId>${project.groupId}</groupId>
-                <artifactId>mdsal-netconf-tcp</artifactId>
+                <groupId>org.opendaylight.netconf</groupId>
+                <artifactId>netconf-nb</artifactId>
                 <version>${project.version}</version>
             </dependency>
             <dependency>
@@ -302,39 +331,11 @@
             </dependency>
             <dependency>
                 <groupId>${project.groupId}</groupId>
-                <artifactId>netconf-client</artifactId>
-                <version>${project.version}</version>
-                <type>test-jar</type>
-            </dependency>
-            <dependency>
-                <groupId>${project.groupId}</groupId>
-                <artifactId>netconf-netty-util</artifactId>
-                <version>${project.version}</version>
-                <type>test-jar</type>
-            </dependency>
-            <dependency>
-                <groupId>${project.groupId}</groupId>
-                <artifactId>netconf-ssh</artifactId>
-                <version>${project.version}</version>
-                <type>test-jar</type>
-            </dependency>
-            <dependency>
-                <groupId>${project.groupId}</groupId>
-                <artifactId>netconf-util</artifactId>
-                <version>${project.version}</version>
-                <type>test-jar</type>
-            </dependency>
-            <dependency>
-                <groupId>${project.groupId}</groupId>
                 <artifactId>netconf-topology-singleton</artifactId>
                 <version>${project.version}</version>
             </dependency>
-            <dependency>
-                <groupId>${project.groupId}</groupId>
-                <artifactId>netconf-console</artifactId>
-                <version>${project.version}</version>
-            </dependency>
 
+            <!-- Shaded third-party libraries -->
             <dependency>
                 <groupId>${project.groupId}</groupId>
                 <artifactId>shaded-exificient</artifactId>
@@ -357,13 +358,6 @@
             <dependency>
                 <groupId>${project.groupId}</groupId>
                 <artifactId>odl-aaa-netconf-plugin</artifactId>
-                <version>${project.version}</version>
-                <type>xml</type>
-                <classifier>features</classifier>
-            </dependency>
-            <dependency>
-                <groupId>${project.groupId}</groupId>
-                <artifactId>odl-aaa-netconf-plugin-no-cluster</artifactId>
                 <version>${project.version}</version>
                 <type>xml</type>
                 <classifier>features</classifier>
@@ -398,14 +392,84 @@
             </dependency>
             <dependency>
                 <groupId>${project.groupId}</groupId>
-                <artifactId>odl-netconf-mapping-api</artifactId>
+                <artifactId>odl-netconf-mdsal</artifactId>
                 <version>${project.version}</version>
                 <type>xml</type>
                 <classifier>features</classifier>
             </dependency>
             <dependency>
                 <groupId>${project.groupId}</groupId>
-                <artifactId>odl-netconf-mdsal</artifactId>
+                <artifactId>odl-netconf-model-rfc5277</artifactId>
+                <version>${project.version}</version>
+                <type>xml</type>
+                <classifier>features</classifier>
+            </dependency>
+            <dependency>
+                <groupId>${project.groupId}</groupId>
+                <artifactId>odl-netconf-model-rfc6022</artifactId>
+                <version>${project.version}</version>
+                <type>xml</type>
+                <classifier>features</classifier>
+            </dependency>
+            <dependency>
+                <groupId>${project.groupId}</groupId>
+                <artifactId>odl-netconf-model-rfc6241</artifactId>
+                <version>${project.version}</version>
+                <type>xml</type>
+                <classifier>features</classifier>
+            </dependency>
+            <dependency>
+                <groupId>${project.groupId}</groupId>
+                <artifactId>odl-netconf-model-rfc6243</artifactId>
+                <version>${project.version}</version>
+                <type>xml</type>
+                <classifier>features</classifier>
+            </dependency>
+            <dependency>
+                <groupId>${project.groupId}</groupId>
+                <artifactId>odl-netconf-model-rfc6470</artifactId>
+                <version>${project.version}</version>
+                <type>xml</type>
+                <classifier>features</classifier>
+            </dependency>
+            <dependency>
+                <groupId>${project.groupId}</groupId>
+                <artifactId>odl-netconf-model-rfc8040</artifactId>
+                <version>${project.version}</version>
+                <type>xml</type>
+                <classifier>features</classifier>
+            </dependency>
+            <dependency>
+                <groupId>${project.groupId}</groupId>
+                <artifactId>odl-netconf-model-rfc8341</artifactId>
+                <version>${project.version}</version>
+                <type>xml</type>
+                <classifier>features</classifier>
+            </dependency>
+            <dependency>
+                <groupId>${project.groupId}</groupId>
+                <artifactId>odl-netconf-model-rfc8526</artifactId>
+                <version>${project.version}</version>
+                <type>xml</type>
+                <classifier>features</classifier>
+            </dependency>
+            <dependency>
+                <groupId>${project.groupId}</groupId>
+                <artifactId>odl-netconf-model-rfc8639</artifactId>
+                <version>${project.version}</version>
+                <type>xml</type>
+                <classifier>features</classifier>
+            </dependency>
+            <dependency>
+                <groupId>${project.groupId}</groupId>
+                <artifactId>odl-netconf-model-rfc8641</artifactId>
+                <version>${project.version}</version>
+                <type>xml</type>
+                <classifier>features</classifier>
+            </dependency>
+            <dependency>
+                <groupId>${project.groupId}</groupId>
+                <artifactId>odl-netconf-model-rfc8650</artifactId>
                 <version>${project.version}</version>
                 <type>xml</type>
                 <classifier>features</classifier>
@@ -426,34 +490,6 @@
             </dependency>
             <dependency>
                 <groupId>${project.groupId}</groupId>
-                <artifactId>odl-netconf-notifications-api</artifactId>
-                <version>${project.version}</version>
-                <type>xml</type>
-                <classifier>features</classifier>
-            </dependency>
-            <dependency>
-                <groupId>${project.groupId}</groupId>
-                <artifactId>odl-netconf-notifications-impl</artifactId>
-                <version>${project.version}</version>
-                <type>xml</type>
-                <classifier>features</classifier>
-            </dependency>
-            <dependency>
-                <groupId>${project.groupId}</groupId>
-                <artifactId>odl-netconf-ssh</artifactId>
-                <version>${project.version}</version>
-                <type>xml</type>
-                <classifier>features</classifier>
-            </dependency>
-            <dependency>
-                <groupId>${project.groupId}</groupId>
-                <artifactId>odl-netconf-tcp</artifactId>
-                <version>${project.version}</version>
-                <type>xml</type>
-                <classifier>features</classifier>
-            </dependency>
-            <dependency>
-                <groupId>${project.groupId}</groupId>
                 <artifactId>odl-netconf-util</artifactId>
                 <version>${project.version}</version>
                 <type>xml</type>
@@ -461,13 +497,6 @@
             </dependency>
 
             <!-- netconf-connector features -->
-            <dependency>
-                <groupId>${project.groupId}</groupId>
-                <artifactId>features-netconf-connector</artifactId>
-                <version>${project.version}</version>
-                <type>xml</type>
-                <classifier>features</classifier>
-            </dependency>
             <dependency>
                 <groupId>${project.groupId}</groupId>
                 <artifactId>odl-netconf-clustered-topology</artifactId>
@@ -518,22 +547,6 @@
                 <classifier>features</classifier>
             </dependency>
 
-            <!-- yanglib features -->
-            <dependency>
-                <groupId>${project.groupId}</groupId>
-                <artifactId>features-yanglib</artifactId>
-                <version>${project.version}</version>
-                <type>xml</type>
-                <classifier>features</classifier>
-            </dependency>
-            <dependency>
-                <groupId>${project.groupId}</groupId>
-                <artifactId>odl-yanglib</artifactId>
-                <version>${project.version}</version>
-                <type>xml</type>
-                <classifier>features</classifier>
-            </dependency>
-
             <!-- RESTCONF -->
             <dependency>
                 <groupId>${project.groupId}</groupId>
@@ -576,7 +589,7 @@
             </dependency>
             <dependency>
                 <groupId>${project.groupId}</groupId>
-                <artifactId>sal-rest-docgen</artifactId>
+                <artifactId>restconf-openapi</artifactId>
                 <version>${project.version}</version>
             </dependency>
             <dependency>
@@ -598,14 +611,7 @@
             <!-- restconf features -->
             <dependency>
                 <groupId>${project.groupId}</groupId>
-                <artifactId>features-restconf</artifactId>
-                <version>${project.version}</version>
-                <type>xml</type>
-                <classifier>features</classifier>
-            </dependency>
-            <dependency>
-                <groupId>${project.groupId}</groupId>
-                <artifactId>odl-mdsal-apidocs</artifactId>
+                <artifactId>odl-restconf-openapi</artifactId>
                 <version>${project.version}</version>
                 <type>xml</type>
                 <classifier>features</classifier>
@@ -650,6 +656,22 @@
             <dependency>
                 <groupId>${project.groupId}</groupId>
                 <artifactId>odl-netconf-test-tools</artifactId>
+                <version>${project.version}</version>
+                <type>xml</type>
+                <classifier>features</classifier>
+            </dependency>
+
+            <!-- Experimental features -->
+            <dependency>
+                <groupId>${project.groupId}</groupId>
+                <artifactId>features-netconf-experimental</artifactId>
+                <version>${project.version}</version>
+                <type>xml</type>
+                <classifier>features</classifier>
+            </dependency>
+            <dependency>
+                <groupId>${project.groupId}</groupId>
+                <artifactId>odl-yanglib</artifactId>
                 <version>${project.version}</version>
                 <type>xml</type>
                 <classifier>features</classifier>

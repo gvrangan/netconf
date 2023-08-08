@@ -23,7 +23,7 @@ import org.opendaylight.mdsal.common.api.LogicalDatastoreType;
 import org.opendaylight.mdsal.dom.api.DOMDataTreeReadTransaction;
 import org.opendaylight.mdsal.dom.api.DOMDataTreeReadWriteTransaction;
 import org.opendaylight.mdsal.dom.api.DOMDataTreeWriteTransaction;
-import org.opendaylight.netconf.sal.connect.api.RemoteDeviceId;
+import org.opendaylight.netconf.client.mdsal.api.RemoteDeviceId;
 import org.opendaylight.netconf.topology.singleton.messages.transactions.DeleteRequest;
 import org.opendaylight.netconf.topology.singleton.messages.transactions.NewReadTransactionRequest;
 import org.opendaylight.netconf.topology.singleton.messages.transactions.NewReadWriteTransactionRequest;
@@ -59,7 +59,7 @@ public class ProxyDOMDataBrokerTest {
 
         assertEquals(DEVICE_ID, tx.getIdentifier());
 
-        tx.read(LogicalDatastoreType.CONFIGURATION, YangInstanceIdentifier.empty());
+        tx.read(LogicalDatastoreType.CONFIGURATION, YangInstanceIdentifier.of());
         masterActor.expectMsgClass(ReadRequest.class);
     }
 
@@ -71,7 +71,7 @@ public class ProxyDOMDataBrokerTest {
 
         assertEquals(DEVICE_ID, tx.getIdentifier());
 
-        tx.delete(LogicalDatastoreType.CONFIGURATION, YangInstanceIdentifier.empty());
+        tx.delete(LogicalDatastoreType.CONFIGURATION, YangInstanceIdentifier.of());
         masterActor.expectMsgClass(DeleteRequest.class);
     }
 
@@ -83,7 +83,7 @@ public class ProxyDOMDataBrokerTest {
 
         assertEquals(DEVICE_ID, tx.getIdentifier());
 
-        tx.read(LogicalDatastoreType.CONFIGURATION, YangInstanceIdentifier.empty());
+        tx.read(LogicalDatastoreType.CONFIGURATION, YangInstanceIdentifier.of());
         masterActor.expectMsgClass(ReadRequest.class);
     }
 

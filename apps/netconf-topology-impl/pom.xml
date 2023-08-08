@@ -11,7 +11,7 @@
     <parent>
         <groupId>org.opendaylight.netconf</groupId>
         <artifactId>netconf-parent</artifactId>
-        <version>6.0.0-SNAPSHOT</version>
+        <version>7.0.0-SNAPSHOT</version>
         <relativePath>../../parent</relativePath>
     </parent>
 
@@ -23,6 +23,11 @@
         <dependency>
             <groupId>org.opendaylight.netconf</groupId>
             <artifactId>netconf-topology</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.github.spotbugs</groupId>
+            <artifactId>spotbugs-annotations</artifactId>
+            <optional>true</optional>
         </dependency>
         <dependency>
             <groupId>com.guicedee.services</groupId>

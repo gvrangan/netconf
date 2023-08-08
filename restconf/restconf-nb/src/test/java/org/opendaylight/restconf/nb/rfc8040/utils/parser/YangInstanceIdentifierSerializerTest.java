@@ -11,18 +11,14 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertThrows;
 import static org.junit.Assert.assertTrue;
 
-import com.google.common.collect.ImmutableSet;
-import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import org.junit.AfterClass;
 import org.junit.BeforeClass;
 import org.junit.Test;
 import org.opendaylight.restconf.common.errors.RestconfDocumentedException;
-import org.opendaylight.restconf.nb.rfc8040.TestRestconfUtils;
 import org.opendaylight.yangtools.yang.common.QName;
 import org.opendaylight.yangtools.yang.data.api.YangInstanceIdentifier;
-import org.opendaylight.yangtools.yang.data.api.YangInstanceIdentifier.AugmentationIdentifier;
 import org.opendaylight.yangtools.yang.data.api.YangInstanceIdentifier.NodeIdentifierWithPredicates;
 import org.opendaylight.yangtools.yang.data.api.YangInstanceIdentifier.NodeWithValue;
 import org.opendaylight.yangtools.yang.model.api.EffectiveModelContext;
@@ -32,13 +28,12 @@ import org.opendaylight.yangtools.yang.test.util.YangParserTestUtils;
  * Unit tests for {@link YangInstanceIdentifierSerializer}.
  */
 public class YangInstanceIdentifierSerializerTest {
-
     // schema context with test modules
     private static EffectiveModelContext SCHEMA_CONTEXT;
 
     @BeforeClass
-    public static void beforeClass() throws Exception {
-        SCHEMA_CONTEXT = YangParserTestUtils.parseYangFiles(TestRestconfUtils.loadFiles("/restconf/parser/serializer"));
+    public static void beforeClass() {
+        SCHEMA_CONTEXT = YangParserTestUtils.parseYangResourceDirectory("/restconf/parser/serializer");
     }
 
     @AfterClass
@@ -108,7 +103,7 @@ public class YangInstanceIdentifierSerializerTest {
     public void serializeListWithNoKeysTest() {
         final YangInstanceIdentifier data = YangInstanceIdentifier.builder()
                 .node(QName.create("serializer:test", "2016-06-06", "list-no-key"))
-                .nodeWithKey(QName.create("serializer:test", "2016-06-06", "list-no-key"), new HashMap<>())
+                .node(QName.create("serializer:test", "2016-06-06", "list-no-key"))
                 .build();
 
         final String result = YangInstanceIdentifierSerializer.create(SCHEMA_CONTEXT, data);
@@ -117,11 +112,27 @@ public class YangInstanceIdentifierSerializerTest {
 
     /**
      * Positive test of serialization of <code>YangInstanceIdentifier</code> to <code>String</code> when serialized
+     * <code>YangInstanceIdentifier</code> contains a keyed list, but the path argument does not specify them. Returned
+     * <code>String</code> is compared to have expected value.
+     */
+    @Test
+    public void serializeMapWithNoKeysTest() {
+        final YangInstanceIdentifier data = YangInstanceIdentifier.builder()
+                .node(QName.create("serializer:test", "2016-06-06", "list-one-key"))
+                .nodeWithKey(QName.create("serializer:test", "2016-06-06", "list-one-key"), Map.of())
+                .build();
+
+        final String result = YangInstanceIdentifierSerializer.create(SCHEMA_CONTEXT, data);
+        assertEquals("Serialization not successful", "serializer-test:list-one-key", result);
+    }
+
+    /**
+     * Positive test of serialization of <code>YangInstanceIdentifier</code> to <code>String</code> when serialized
      * <code>YangInstanceIdentifier</code> contains list with one key. Returned <code>String</code> is compared to have
      * expected value.
      */
     @Test
-    public void serializeListWithOneKeyTest() {
+    public void serializeMapWithOneKeyTest() {
         final YangInstanceIdentifier data = YangInstanceIdentifier.builder()
                 .node(QName.create("serializer:test", "2016-06-06", "list-one-key"))
                 .nodeWithKey(QName.create("serializer:test", "2016-06-06", "list-one-key"),
@@ -138,7 +149,7 @@ public class YangInstanceIdentifierSerializerTest {
      * to have expected value.
      */
     @Test
-    public void serializeListWithMultipleKeysTest() {
+    public void serializeMapWithMultipleKeysTest() {
         final QName list = QName.create("serializer:test", "2016-06-06", "list-multiple-keys");
         final Map<QName, Object> values = new LinkedHashMap<>();
         values.put(QName.create(list, "name"), "value-1");
@@ -191,7 +202,7 @@ public class YangInstanceIdentifierSerializerTest {
     @Test
     public void serializeNullSchemaContextNegativeTest() {
         assertThrows(NullPointerException.class,
-            () -> YangInstanceIdentifierSerializer.create(null, YangInstanceIdentifier.empty()));
+            () -> YangInstanceIdentifierSerializer.create(null, YangInstanceIdentifier.of()));
     }
 
     /**
@@ -212,7 +223,7 @@ public class YangInstanceIdentifierSerializerTest {
      */
     @Test
     public void serializeEmptyDataTest() {
-        final String result = YangInstanceIdentifierSerializer.create(SCHEMA_CONTEXT, YangInstanceIdentifier.empty());
+        final String result = YangInstanceIdentifierSerializer.create(SCHEMA_CONTEXT, YangInstanceIdentifier.of());
         assertTrue("Empty identifier is expected", result.isEmpty());
     }
 
@@ -256,7 +267,7 @@ public class YangInstanceIdentifierSerializerTest {
      */
     @Test
     public void serializePercentEncodingTest() {
-        final String value = "foo" + ":foo bar/" + "foo,bar/" + "'bar'";
+        final String value = "foo:foo bar/foo,bar/'bar'";
         final String encoded = "foo%3Afoo%20bar%2Ffoo%2Cbar%2F%27bar%27";
 
         final YangInstanceIdentifier data = YangInstanceIdentifier.builder()
@@ -298,7 +309,6 @@ public class YangInstanceIdentifierSerializerTest {
         final YangInstanceIdentifier data = YangInstanceIdentifier.builder()
                 .node(list)
                 .node(NodeIdentifierWithPredicates.of(list, QName.create(list, "list-key"), 100))
-                .node(new AugmentationIdentifier(ImmutableSet.of(child)))
                 .node(child)
                 .build();
 
@@ -323,7 +333,6 @@ public class YangInstanceIdentifierSerializerTest {
         final YangInstanceIdentifier data = YangInstanceIdentifier.builder()
                 .node(list)
                 .node(NodeIdentifierWithPredicates.of(list, QName.create(list, "list-key"), 100))
-                .node(new AugmentationIdentifier(ImmutableSet.of(child)))
                 .node(child)
                 .build();
 

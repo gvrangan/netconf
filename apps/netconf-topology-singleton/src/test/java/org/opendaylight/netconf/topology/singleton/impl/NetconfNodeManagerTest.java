@@ -7,7 +7,6 @@
  */
 package org.opendaylight.netconf.topology.singleton.impl;
 
-import static java.nio.charset.StandardCharsets.UTF_8;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.after;
@@ -30,7 +29,7 @@ import akka.testkit.TestActorRef;
 import akka.testkit.javadsl.TestKit;
 import akka.util.Timeout;
 import com.google.common.collect.Iterables;
-import com.google.common.io.ByteSource;
+import com.google.common.io.CharSource;
 import com.google.common.util.concurrent.Futures;
 import com.typesafe.config.ConfigFactory;
 import java.net.InetSocketAddress;
@@ -57,13 +56,13 @@ import org.opendaylight.mdsal.dom.api.DOMMountPoint;
 import org.opendaylight.mdsal.dom.api.DOMMountPointService;
 import org.opendaylight.mdsal.dom.api.DOMNotificationService;
 import org.opendaylight.mdsal.dom.api.DOMRpcService;
+import org.opendaylight.netconf.client.mdsal.NetconfDevice;
+import org.opendaylight.netconf.client.mdsal.api.NetconfDeviceSchemasResolver;
+import org.opendaylight.netconf.client.mdsal.api.RemoteDeviceId;
+import org.opendaylight.netconf.client.mdsal.api.RemoteDeviceServices;
+import org.opendaylight.netconf.client.mdsal.api.RemoteDeviceServices.Actions;
+import org.opendaylight.netconf.client.mdsal.api.RemoteDeviceServices.Rpcs;
 import org.opendaylight.netconf.dom.api.NetconfDataTreeService;
-import org.opendaylight.netconf.sal.connect.api.NetconfDeviceSchemasResolver;
-import org.opendaylight.netconf.sal.connect.api.RemoteDeviceId;
-import org.opendaylight.netconf.sal.connect.api.RemoteDeviceServices;
-import org.opendaylight.netconf.sal.connect.api.RemoteDeviceServices.Actions;
-import org.opendaylight.netconf.sal.connect.api.RemoteDeviceServices.Rpcs;
-import org.opendaylight.netconf.sal.connect.netconf.NetconfDevice;
 import org.opendaylight.netconf.topology.singleton.impl.actors.NetconfNodeActor;
 import org.opendaylight.netconf.topology.singleton.impl.utils.NetconfTopologySetup;
 import org.opendaylight.netconf.topology.singleton.impl.utils.NetconfTopologyUtils;
@@ -76,8 +75,8 @@ import org.opendaylight.yang.gen.v1.urn.ietf.params.xml.ns.yang.ietf.inet.types.
 import org.opendaylight.yang.gen.v1.urn.ietf.params.xml.ns.yang.ietf.inet.types.rev130715.IpAddress;
 import org.opendaylight.yang.gen.v1.urn.ietf.params.xml.ns.yang.ietf.inet.types.rev130715.Ipv4Address;
 import org.opendaylight.yang.gen.v1.urn.ietf.params.xml.ns.yang.ietf.inet.types.rev130715.PortNumber;
-import org.opendaylight.yang.gen.v1.urn.opendaylight.netconf.device.rev221225.ConnectionOper.ConnectionStatus;
-import org.opendaylight.yang.gen.v1.urn.opendaylight.netconf.device.rev221225.connection.oper.ClusteredConnectionStatusBuilder;
+import org.opendaylight.yang.gen.v1.urn.opendaylight.netconf.device.rev230430.ConnectionOper.ConnectionStatus;
+import org.opendaylight.yang.gen.v1.urn.opendaylight.netconf.device.rev230430.connection.oper.ClusteredConnectionStatusBuilder;
 import org.opendaylight.yang.gen.v1.urn.opendaylight.netconf.node.topology.rev221225.NetconfNode;
 import org.opendaylight.yang.gen.v1.urn.opendaylight.netconf.node.topology.rev221225.NetconfNodeBuilder;
 import org.opendaylight.yang.gen.v1.urn.tbd.params.xml.ns.yang.network.topology.rev131021.NodeId;
@@ -108,31 +107,22 @@ public class NetconfNodeManagerTest extends AbstractBaseSchemasTest {
 
     @Mock
     private DOMMountPointService mockMountPointService;
-
     @Mock
     private DOMMountPointService.DOMMountPointBuilder mockMountPointBuilder;
-
     @Mock
     private ObjectRegistration<DOMMountPoint> mockMountPointReg;
-
     @Mock
     private DataBroker mockDataBroker;
-
     @Mock
     private NetconfDataTreeService netconfService;
-
     @Mock
     private DOMDataBroker mockDeviceDataBroker;
-
     @Mock
     private Rpcs.Normalized mockRpcService;
-
     @Mock
     private Actions.Normalized mockActionService;
-
     @Mock
     private NetconfDeviceSchemasResolver mockSchemasResolver;
-
     @Mock
     private EffectiveModelContextFactory mockSchemaContextFactory;
 
@@ -163,15 +153,18 @@ public class NetconfNodeManagerTest extends AbstractBaseSchemasTest {
 
         SOURCE_IDENTIFIERS.stream().map(
             sourceId -> masterSchemaRepository.registerSchemaSource(
-                id -> Futures.immediateFuture(YangTextSchemaSource.delegateForByteSource(id,
-                        ByteSource.wrap(yangTemplate.replaceAll("ID", id.name().getLocalName()).getBytes(UTF_8)))),
+                id -> Futures.immediateFuture(YangTextSchemaSource.delegateForCharSource(id,
+                        CharSource.wrap(yangTemplate.replaceAll("ID", id.name().getLocalName())))),
                 PotentialSchemaSource.create(sourceId, YangTextSchemaSource.class, 1)))
         .collect(Collectors.toList());
 
         NetconfTopologySetup masterSetup = new NetconfTopologySetup.NetconfTopologySetupBuilder()
-                .setActorSystem(masterSystem).setDataBroker(mockDataBroker).setSchemaResourceDTO(
-                        new NetconfDevice.SchemaResourcesDTO(masterSchemaRepository, masterSchemaRepository,
-                                mockSchemaContextFactory, mockSchemasResolver)).setBaseSchemas(BASE_SCHEMAS).build();
+                .setActorSystem(masterSystem)
+                .setDataBroker(mockDataBroker)
+                .setSchemaResourceDTO(new NetconfDevice.SchemaResourcesDTO(
+                    masterSchemaRepository, masterSchemaRepository, mockSchemaContextFactory, mockSchemasResolver))
+                .setBaseSchemas(BASE_SCHEMAS)
+                .build();
 
         testMasterActorRef = TestActorRef.create(masterSystem, Props.create(TestMasterActor.class, masterSetup,
                 DEVICE_ID, responseTimeout, mockMountPointService).withDispatcher(Dispatchers.DefaultDispatcherId()),
@@ -182,9 +175,12 @@ public class NetconfNodeManagerTest extends AbstractBaseSchemasTest {
                 TextToIRTransformer.create(slaveSchemaRepository, slaveSchemaRepository));
 
         NetconfTopologySetup slaveSetup = new NetconfTopologySetup.NetconfTopologySetupBuilder()
-                .setActorSystem(slaveSystem).setDataBroker(mockDataBroker).setSchemaResourceDTO(
-                        new NetconfDevice.SchemaResourcesDTO(slaveSchemaRepository, slaveSchemaRepository,
-                                mockSchemaContextFactory, mockSchemasResolver)).setBaseSchemas(BASE_SCHEMAS).build();
+                .setActorSystem(slaveSystem)
+                .setDataBroker(mockDataBroker)
+                .setSchemaResourceDTO(new NetconfDevice.SchemaResourcesDTO(
+                    slaveSchemaRepository, slaveSchemaRepository, mockSchemaContextFactory, mockSchemasResolver))
+                .setBaseSchemas(BASE_SCHEMAS)
+                .build();
 
         netconfNodeManager = new NetconfNodeManager(slaveSetup, DEVICE_ID, responseTimeout,
                 mockMountPointService);

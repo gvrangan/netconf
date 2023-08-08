@@ -31,12 +31,10 @@ import org.opendaylight.mdsal.dom.api.DOMYangTextSourceProvider;
 import org.opendaylight.mdsal.dom.broker.DOMMountPointServiceImpl;
 import org.opendaylight.mdsal.dom.spi.FixedDOMSchemaService;
 import org.opendaylight.restconf.common.ErrorTags;
-import org.opendaylight.restconf.common.context.InstanceIdentifierContext;
 import org.opendaylight.restconf.common.errors.RestconfDocumentedException;
 import org.opendaylight.restconf.common.errors.RestconfError;
 import org.opendaylight.restconf.nb.rfc8040.TestRestconfUtils;
 import org.opendaylight.restconf.nb.rfc8040.rests.services.api.SchemaExportContext;
-import org.opendaylight.restconf.nb.rfc8040.utils.RestconfConstants;
 import org.opendaylight.yangtools.yang.common.ErrorTag;
 import org.opendaylight.yangtools.yang.common.ErrorType;
 import org.opendaylight.yangtools.yang.common.QName;
@@ -73,8 +71,7 @@ public class ParserIdentifierTest {
             "/(parser:identifier:included?revision=2016-06-02)list-1/list-1"
             + "[{(parser:identifier:included?revision=2016-06-02)name=name, "
             + "(parser:identifier:included?revision=2016-06-02)revision=2016-06-02}]"
-            + "/AugmentationIdentifier{childNames=[(parser:identifier?revision=2016-06-02)augment-leaf]}/"
-            + "(parser:identifier?revision=2016-06-02)augment-leaf";
+            + "/(parser:identifier?revision=2016-06-02)augment-leaf";
 
     // invalid test identifier
     private static final String INVALID_TEST_IDENT =
@@ -135,7 +132,7 @@ public class ParserIdentifierTest {
                 .getInstance();
 
         // register mount point with null schema context
-        when(mockMountPointService.getMountPoint(YangInstanceIdentifier.empty()))
+        when(mockMountPointService.getMountPoint(YangInstanceIdentifier.of()))
                 .thenReturn(Optional.of(mockMountPoint));
     }
 
@@ -149,11 +146,8 @@ public class ParserIdentifierTest {
      */
     @Test
     public void toInstanceIdentifierTest() {
-        final InstanceIdentifierContext context = ParserIdentifier.toInstanceIdentifier(
-                TEST_IDENT, SCHEMA_CONTEXT, Optional.empty());
-
-        assertEquals("Returned not expected identifier",
-                TEST_IDENT_RESULT, context .getInstanceIdentifier().toString());
+        final var context = ParserIdentifier.toInstanceIdentifier(TEST_IDENT, SCHEMA_CONTEXT, null);
+        assertEquals(TEST_IDENT_RESULT, context.getInstanceIdentifier().toString());
     }
 
     /**
@@ -162,30 +156,20 @@ public class ParserIdentifierTest {
      */
     @Test
     public void toInstanceIdentifierOtherModulesTest() {
-        final InstanceIdentifierContext context = ParserIdentifier.toInstanceIdentifier(
-                TEST_IDENT_OTHERS, SCHEMA_CONTEXT, Optional.empty());
-
-        assertEquals("Returned not expected identifier",
-                TEST_IDENT_OTHERS_RESULT, context.getInstanceIdentifier().toString());
+        final var context = ParserIdentifier.toInstanceIdentifier(TEST_IDENT_OTHERS, SCHEMA_CONTEXT, null);
+        assertEquals(TEST_IDENT_OTHERS_RESULT, context.getInstanceIdentifier().toString());
     }
 
     /**
-     * Positive test of creating <code>InstanceIdentifierContext</code> from identifier containing
-     * {@link RestconfConstants#MOUNT}.
+     * Positive test of creating {@code InstanceIdentifierContext} from identifier containing {@code yang-ext:mount}.
      */
     @Test
     public void toInstanceIdentifierMountPointTest() {
-        final InstanceIdentifierContext context = ParserIdentifier.toInstanceIdentifier(
-                MOUNT_POINT_IDENT + "/" + TEST_IDENT, SCHEMA_CONTEXT, Optional.of(mountPointService));
-
-        assertEquals("Returned not expected identifier",
-                TEST_IDENT_RESULT.toString(), context.getInstanceIdentifier().toString());
-
-        assertEquals("Mount point not found",
-                mountPoint, context.getMountPoint());
-
-        assertEquals("Schema context from mount point expected",
-                SCHEMA_CONTEXT_ON_MOUNT_POINT, context.getSchemaContext());
+        final var context = ParserIdentifier.toInstanceIdentifier(MOUNT_POINT_IDENT + "/" + TEST_IDENT, SCHEMA_CONTEXT,
+            mountPointService);
+        assertEquals(TEST_IDENT_RESULT.toString(), context.getInstanceIdentifier().toString());
+        assertEquals(mountPoint, context.getMountPoint());
+        assertEquals(SCHEMA_CONTEXT_ON_MOUNT_POINT, context.getSchemaContext());
     }
 
     /**
@@ -194,10 +178,8 @@ public class ParserIdentifierTest {
      */
     @Test
     public void toInstanceIdentifierNullIdentifierTest() {
-        final InstanceIdentifierContext context = ParserIdentifier.toInstanceIdentifier(
-                null, SCHEMA_CONTEXT, Optional.empty());
-        assertEquals("Returned not expected identifier",
-                YangInstanceIdentifier.empty(), context.getInstanceIdentifier());
+        final var context = ParserIdentifier.toInstanceIdentifier(null, SCHEMA_CONTEXT, null);
+        assertEquals(YangInstanceIdentifier.of(), context.getInstanceIdentifier());
     }
 
     /**
@@ -206,8 +188,7 @@ public class ParserIdentifierTest {
      */
     @Test
     public void toInstanceIdentifierNullSchemaContextNegativeTest() {
-        assertThrows(NullPointerException.class,
-            () -> ParserIdentifier.toInstanceIdentifier(TEST_IDENT, null, Optional.empty()));
+        assertThrows(NullPointerException.class, () -> ParserIdentifier.toInstanceIdentifier(TEST_IDENT, null, null));
     }
 
     /**
@@ -215,10 +196,8 @@ public class ParserIdentifierTest {
      */
     @Test
     public void toInstanceIdentifierEmptyIdentifierTest() {
-        final InstanceIdentifierContext context = ParserIdentifier.toInstanceIdentifier(
-                "", SCHEMA_CONTEXT, Optional.empty());
-        assertEquals("Returned not expected identifier",
-                YangInstanceIdentifier.empty(), context.getInstanceIdentifier());
+        final var context = ParserIdentifier.toInstanceIdentifier("", SCHEMA_CONTEXT, null);
+        assertEquals(YangInstanceIdentifier.of(), context.getInstanceIdentifier());
     }
 
     /**
@@ -226,19 +205,18 @@ public class ParserIdentifierTest {
      */
     @Test
     public void toInstanceIdentifierInvalidIdentifierNegativeTest() {
-        RestconfDocumentedException ex = assertThrows(RestconfDocumentedException.class,
-            () -> ParserIdentifier.toInstanceIdentifier(INVALID_TEST_IDENT, SCHEMA_CONTEXT, Optional.empty()));
+        final var ex = assertThrows(RestconfDocumentedException.class,
+            () -> ParserIdentifier.toInstanceIdentifier(INVALID_TEST_IDENT, SCHEMA_CONTEXT, null));
     }
 
     /**
-     * Negative test when identifier contains {@link RestconfConstants#MOUNT} but identifier part is not valid. Test
-     * should fail with <code>RestconfDocumentedException</code>.
+     * Negative test when identifier contains {@code yang-ext:mount} but identifier part is not valid. Test
+     * should fail with {@link RestconfDocumentedException}.
      */
     @Test
     public void toInstanceIdentifierMountPointInvalidIdentifierNegativeTest() {
-        RestconfDocumentedException ex = assertThrows(RestconfDocumentedException.class,
-            () -> ParserIdentifier.toInstanceIdentifier(INVALID_MOUNT_POINT_IDENT, SCHEMA_CONTEXT,
-                Optional.of(mountPointService)));
+        final var ex = assertThrows(RestconfDocumentedException.class,
+            () -> ParserIdentifier.toInstanceIdentifier(INVALID_MOUNT_POINT_IDENT, SCHEMA_CONTEXT, mountPointService));
     }
 
     /**
@@ -248,9 +226,8 @@ public class ParserIdentifierTest {
      */
     @Test
     public void toInstanceIdentifierMissingMountPointNegativeTest() {
-        RestconfDocumentedException ex = assertThrows(RestconfDocumentedException.class,
-            () -> ParserIdentifier.toInstanceIdentifier("/yang-ext:mount", SCHEMA_CONTEXT,
-                Optional.of(mountPointService)));
+        final var ex = assertThrows(RestconfDocumentedException.class,
+            () -> ParserIdentifier.toInstanceIdentifier("/yang-ext:mount", SCHEMA_CONTEXT, mountPointService));
         final List<RestconfError> errors = ex.getErrors();
         assertEquals(1, errors.size());
         assertEquals("Not expected error type", ErrorType.PROTOCOL, errors.get(0).getErrorType());
@@ -264,8 +241,8 @@ public class ParserIdentifierTest {
      */
     @Test
     public void toInstanceIdentifierMissingMountPointServiceNegativeTest() {
-        RestconfDocumentedException ex = assertThrows(RestconfDocumentedException.class,
-            () -> ParserIdentifier.toInstanceIdentifier("yang-ext:mount", SCHEMA_CONTEXT, Optional.empty()));
+        final var ex = assertThrows(RestconfDocumentedException.class,
+            () -> ParserIdentifier.toInstanceIdentifier("yang-ext:mount", SCHEMA_CONTEXT, null));
         assertEquals("Not expected error type", ErrorType.APPLICATION, ex.getErrors().get(0).getErrorType());
         assertEquals("Not expected error tag", ErrorTag.OPERATION_FAILED, ex.getErrors().get(0).getErrorTag());
     }
@@ -568,8 +545,7 @@ public class ParserIdentifierTest {
      */
     @Test
     public void invokeRpcTest() {
-        final InstanceIdentifierContext result = ParserIdentifier.toInstanceIdentifier(
-                INVOKE_RPC, SCHEMA_CONTEXT, Optional.empty());
+        final var result = ParserIdentifier.toInstanceIdentifier(INVOKE_RPC, SCHEMA_CONTEXT, null);
 
         // RPC schema node
         final QName rpcQName = result.getSchemaNode().getQName();
@@ -590,8 +566,8 @@ public class ParserIdentifierTest {
      */
     @Test
     public void invokeRpcOnMountPointTest() {
-        final InstanceIdentifierContext result = ParserIdentifier.toInstanceIdentifier(
-                MOUNT_POINT_IDENT + "/" + INVOKE_RPC, SCHEMA_CONTEXT, Optional.of(mountPointService));
+        final var result = ParserIdentifier.toInstanceIdentifier(MOUNT_POINT_IDENT + "/" + INVOKE_RPC, SCHEMA_CONTEXT,
+            mountPointService);
 
         // RPC schema node
         final QName rpcQName = result.getSchemaNode().getQName();
@@ -610,8 +586,7 @@ public class ParserIdentifierTest {
      */
     @Test
     public void invokeActionTest() {
-        final InstanceIdentifierContext result = ParserIdentifier
-            .toInstanceIdentifier(INVOKE_ACTION, SCHEMA_CONTEXT, Optional.empty());
+        final var result = ParserIdentifier.toInstanceIdentifier(INVOKE_ACTION, SCHEMA_CONTEXT, null);
 
         // Action schema node
         final QName actionQName = result.getSchemaNode().getQName();
@@ -630,9 +605,8 @@ public class ParserIdentifierTest {
      */
     @Test
     public void invokeActionOnMountPointTest() {
-        final InstanceIdentifierContext result = ParserIdentifier
-            .toInstanceIdentifier(MOUNT_POINT_IDENT + "/" + INVOKE_ACTION, SCHEMA_CONTEXT,
-                Optional.of(mountPointService));
+        final var result = ParserIdentifier.toInstanceIdentifier(MOUNT_POINT_IDENT + "/" + INVOKE_ACTION,
+            SCHEMA_CONTEXT, mountPointService);
 
         // Action schema node
         final QName actionQName = result.getSchemaNode().getQName();

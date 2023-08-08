@@ -12,7 +12,7 @@ import org.opendaylight.yangtools.concepts.Immutable;
 
 /**
  * Interface implemented by all Java classes which represent a
- * <a href="https://datatracker.ietf.org/doc/html/rfc8040#section-4.8">RESTCONF query parameter</a>.
+ * <a href="https://www.rfc-editor.org/rfc/rfc8040#section-4.8">RESTCONF query parameter</a>.
  *
  * <p>
  * Implementations of this interface are required to expose a {@code public static @NonNull uriName} constant, which
@@ -22,8 +22,10 @@ import org.opendaylight.yangtools.concepts.Immutable;
  * This naming violates the usual Java coding style, we need it to keep API consistency as an enum can be used as an
  * implementation, in which case users could be confused by upper-case constants which are not enum members.
  */
-// FIXME: sealed when we have JDK17+?
-public interface RestconfQueryParam<T extends RestconfQueryParam<T>> extends Immutable {
+public sealed interface RestconfQueryParam<T extends RestconfQueryParam<T>> extends Immutable
+        permits ContentParam, DepthParam, FieldsParam, FilterParam, InsertParam, PointParam, WithDefaultsParam,
+                AbstractReplayParam,
+                ChangedLeafNodesOnlyParam, LeafNodesOnlyParam, PrettyPrintParam, SkipNotificationDataParam {
     /**
      * Return the Java representation class.
      *

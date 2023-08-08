@@ -8,11 +8,15 @@
 package org.opendaylight.restconf.nb.rfc8040.rests.transactions;
 
 import com.google.common.annotations.Beta;
-import com.google.common.util.concurrent.FluentFuture;
+import com.google.common.util.concurrent.ListenableFuture;
+import java.util.Optional;
 import org.eclipse.jdt.annotation.NonNull;
+import org.eclipse.jdt.annotation.Nullable;
 import org.opendaylight.mdsal.common.api.CommitInfo;
+import org.opendaylight.restconf.nb.rfc8040.rests.utils.TransactionUtil;
 import org.opendaylight.yangtools.yang.data.api.YangInstanceIdentifier;
 import org.opendaylight.yangtools.yang.data.api.schema.NormalizedNode;
+import org.opendaylight.yangtools.yang.data.api.schema.NormalizedNodeContainer;
 import org.opendaylight.yangtools.yang.model.api.EffectiveModelContext;
 
 /**
@@ -37,7 +41,7 @@ public abstract class RestconfTransaction {
      *
      * @return a FluentFuture containing the result of the commit information
      */
-    public abstract FluentFuture<? extends @NonNull CommitInfo> commit();
+    public abstract ListenableFuture<? extends @NonNull CommitInfo> commit();
 
     /**
      * Delete data from the datastore.
@@ -78,4 +82,12 @@ public abstract class RestconfTransaction {
      * @param schemaContext static view of compiled yang files
      */
     public abstract void replace(YangInstanceIdentifier path, NormalizedNode data, EffectiveModelContext schemaContext);
+
+    // FIXME: NETCONF-1107: this method should not be exposed once we expose proper methods for
+    //        {Post,Put}TransactionUtil.submitData()
+    public final @Nullable NormalizedNodeContainer<?> readList(final YangInstanceIdentifier path) {
+        return (NormalizedNodeContainer<?>) TransactionUtil.syncAccess(read(path), path).orElse(null);
+    }
+
+    abstract ListenableFuture<Optional<NormalizedNode>> read(YangInstanceIdentifier path);
 }

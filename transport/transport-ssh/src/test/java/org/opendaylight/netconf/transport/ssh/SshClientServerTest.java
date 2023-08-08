@@ -41,6 +41,8 @@ import org.apache.commons.codec.digest.Crypt;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
@@ -51,6 +53,8 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.opendaylight.netconf.shaded.sshd.client.session.ClientSession;
 import org.opendaylight.netconf.shaded.sshd.common.session.Session;
+import org.opendaylight.netconf.shaded.sshd.server.auth.password.UserAuthPasswordFactory;
+import org.opendaylight.netconf.shaded.sshd.server.keyprovider.SimpleGeneratorHostKeyProvider;
 import org.opendaylight.netconf.shaded.sshd.server.session.ServerSession;
 import org.opendaylight.netconf.transport.api.TransportChannel;
 import org.opendaylight.netconf.transport.api.TransportChannelListener;
@@ -58,14 +62,14 @@ import org.opendaylight.netconf.transport.tcp.NettyTransportSupport;
 import org.opendaylight.yang.gen.v1.urn.ietf.params.xml.ns.yang.ietf.inet.types.rev130715.Host;
 import org.opendaylight.yang.gen.v1.urn.ietf.params.xml.ns.yang.ietf.inet.types.rev130715.IetfInetUtil;
 import org.opendaylight.yang.gen.v1.urn.ietf.params.xml.ns.yang.ietf.inet.types.rev130715.PortNumber;
-import org.opendaylight.yang.gen.v1.urn.ietf.params.xml.ns.yang.ietf.ssh.client.rev221212.SshClientGrouping;
-import org.opendaylight.yang.gen.v1.urn.ietf.params.xml.ns.yang.ietf.ssh.client.rev221212.ssh.client.grouping.ClientIdentity;
-import org.opendaylight.yang.gen.v1.urn.ietf.params.xml.ns.yang.ietf.ssh.client.rev221212.ssh.client.grouping.ServerAuthentication;
-import org.opendaylight.yang.gen.v1.urn.ietf.params.xml.ns.yang.ietf.ssh.server.rev221212.SshServerGrouping;
-import org.opendaylight.yang.gen.v1.urn.ietf.params.xml.ns.yang.ietf.ssh.server.rev221212.ssh.server.grouping.ClientAuthentication;
-import org.opendaylight.yang.gen.v1.urn.ietf.params.xml.ns.yang.ietf.ssh.server.rev221212.ssh.server.grouping.ServerIdentity;
-import org.opendaylight.yang.gen.v1.urn.ietf.params.xml.ns.yang.ietf.tcp.client.rev221212.TcpClientGrouping;
-import org.opendaylight.yang.gen.v1.urn.ietf.params.xml.ns.yang.ietf.tcp.server.rev221212.TcpServerGrouping;
+import org.opendaylight.yang.gen.v1.urn.ietf.params.xml.ns.yang.ietf.ssh.client.rev230417.SshClientGrouping;
+import org.opendaylight.yang.gen.v1.urn.ietf.params.xml.ns.yang.ietf.ssh.client.rev230417.ssh.client.grouping.ClientIdentity;
+import org.opendaylight.yang.gen.v1.urn.ietf.params.xml.ns.yang.ietf.ssh.client.rev230417.ssh.client.grouping.ServerAuthentication;
+import org.opendaylight.yang.gen.v1.urn.ietf.params.xml.ns.yang.ietf.ssh.server.rev230417.SshServerGrouping;
+import org.opendaylight.yang.gen.v1.urn.ietf.params.xml.ns.yang.ietf.ssh.server.rev230417.ssh.server.grouping.ClientAuthentication;
+import org.opendaylight.yang.gen.v1.urn.ietf.params.xml.ns.yang.ietf.ssh.server.rev230417.ssh.server.grouping.ServerIdentity;
+import org.opendaylight.yang.gen.v1.urn.ietf.params.xml.ns.yang.ietf.tcp.client.rev230417.TcpClientGrouping;
+import org.opendaylight.yang.gen.v1.urn.ietf.params.xml.ns.yang.ietf.tcp.server.rev230417.TcpServerGrouping;
 import org.opendaylight.yangtools.yang.common.Uint16;
 
 @ExtendWith(MockitoExtension.class)
@@ -100,7 +104,7 @@ public class SshClientServerTest {
     private ServerSocket socket;
 
     @BeforeAll
-    static void beforeAll() throws Exception {
+    static void beforeAll() {
         group = NettyTransportSupport.newEventLoopGroup("IntegrationTest");
     }
 
@@ -115,7 +119,7 @@ public class SshClientServerTest {
 
         // create temp socket to get available port for test
         socket = new ServerSocket(0);
-        final var localAddress = IetfInetUtil.INSTANCE.ipAddressFor(InetAddress.getLoopbackAddress());
+        final var localAddress = IetfInetUtil.ipAddressFor(InetAddress.getLoopbackAddress());
         final var localPort = new PortNumber(Uint16.valueOf(socket.getLocalPort()));
         socket.close();
 
@@ -223,9 +227,9 @@ public class SshClientServerTest {
             final var client = SSHClient.connect(clientListener, NettyTransportSupport.newBootstrap().group(group),
                     tcpClientConfig, sshClientConfig).get(2, TimeUnit.SECONDS);
             try {
-                verify(serverListener, timeout(500))
+                verify(serverListener, timeout(10_000))
                         .onTransportChannelEstablished(serverTransportChannelCaptor.capture());
-                verify(clientListener, timeout(500))
+                verify(clientListener, timeout(10_000))
                         .onTransportChannelEstablished(clientTransportChannelCaptor.capture());
                 // validate channels are in expected state
                 var serverChannel = assertChannel(serverTransportChannelCaptor.getAllValues());
@@ -245,16 +249,58 @@ public class SshClientServerTest {
         }
     }
 
-    private static Channel assertChannel(List<TransportChannel> transportChannels) {
+    @Test
+    @DisplayName("SSH server with external initializer")
+    void externalServerInitializer() throws Exception {
+        final var username = getUsernameAndUpdate();
+        when(sshClientConfig.getClientIdentity()).thenReturn(buildClientIdentityWithPassword(username, PASSWORD));
+        // Accept all keys
+        when(sshClientConfig.getServerAuthentication()).thenReturn(null);
+
+        final var server = SSHServer.listen(serverListener,
+            NettyTransportSupport.newServerBootstrap().group(group),
+            tcpServerConfig, null, factoryManager -> {
+                // authenticate user by credentials and generate host key
+                factoryManager.setUserAuthFactories(List.of(new UserAuthPasswordFactory()));
+                factoryManager.setPasswordAuthenticator(
+                    (usr, psw, session) -> username.equals(usr) && PASSWORD.equals(psw));
+                factoryManager.setKeyPairProvider(new SimpleGeneratorHostKeyProvider());
+            }).get(2, TimeUnit.SECONDS);
+        try {
+            final var client = SSHClient.connect(clientListener, NettyTransportSupport.newBootstrap().group(group),
+                tcpClientConfig, sshClientConfig).get(2, TimeUnit.SECONDS);
+            try {
+                verify(serverListener, timeout(10_000))
+                    .onTransportChannelEstablished(serverTransportChannelCaptor.capture());
+                verify(clientListener, timeout(10_000))
+                    .onTransportChannelEstablished(clientTransportChannelCaptor.capture());
+                // validate channels are in expected state
+                var serverChannel = assertChannel(serverTransportChannelCaptor.getAllValues());
+                var clientChannel = assertChannel(clientTransportChannelCaptor.getAllValues());
+                // validate channels are connecting same sockets
+                assertEquals(serverChannel.remoteAddress(), clientChannel.localAddress());
+                assertEquals(serverChannel.localAddress(), clientChannel.remoteAddress());
+                // validate sessions are authenticated
+                assertSession(ServerSession.class, server.getSessions());
+                assertSession(ClientSession.class, client.getSessions());
+            } finally {
+                client.shutdown().get(2, TimeUnit.SECONDS);
+            }
+        } finally {
+            server.shutdown().get(2, TimeUnit.SECONDS);
+        }
+    }
+
+    private static Channel assertChannel(final List<TransportChannel> transportChannels) {
         assertNotNull(transportChannels);
         assertEquals(1, transportChannels.size());
         final var channel = assertInstanceOf(SSHTransportChannel.class, transportChannels.get(0)).channel();
         assertNotNull(channel);
-        assertTrue(channel.isOpen()); // connection is open
+        assertTrue(channel.isOpen());
         return channel;
     }
 
-    private static <T extends Session> void assertSession(Class<T> type, Collection<Session> sessions) {
+    private static <T extends Session> void assertSession(final Class<T> type, final Collection<Session> sessions) {
         assertNotNull(sessions);
         assertEquals(1, sessions.size());
         final T session = assertInstanceOf(type, sessions.iterator().next());

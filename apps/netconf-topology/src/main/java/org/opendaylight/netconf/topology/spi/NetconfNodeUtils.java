@@ -11,11 +11,11 @@ import java.net.InetSocketAddress;
 import java.util.ArrayList;
 import org.eclipse.jdt.annotation.NonNull;
 import org.eclipse.jdt.annotation.Nullable;
-import org.opendaylight.netconf.sal.connect.api.RemoteDeviceId;
-import org.opendaylight.netconf.sal.connect.netconf.listener.NetconfSessionPreferences;
-import org.opendaylight.netconf.sal.connect.netconf.listener.UserPreferences;
+import org.opendaylight.netconf.client.mdsal.UserPreferences;
+import org.opendaylight.netconf.client.mdsal.api.NetconfSessionPreferences;
+import org.opendaylight.netconf.client.mdsal.api.RemoteDeviceId;
 import org.opendaylight.yang.gen.v1.urn.ietf.params.xml.ns.yang.ietf.inet.types.rev130715.IetfInetUtil;
-import org.opendaylight.yang.gen.v1.urn.opendaylight.netconf.device.rev221225.connection.oper.available.capabilities.AvailableCapability.CapabilityOrigin;
+import org.opendaylight.yang.gen.v1.urn.opendaylight.netconf.device.rev230430.connection.oper.available.capabilities.AvailableCapability.CapabilityOrigin;
 import org.opendaylight.yang.gen.v1.urn.opendaylight.netconf.node.topology.rev221225.NetconfNode;
 import org.opendaylight.yang.gen.v1.urn.opendaylight.netconf.node.topology.rev221225.network.topology.topology.topology.types.TopologyNetconf;
 import org.opendaylight.yang.gen.v1.urn.tbd.params.xml.ns.yang.network.topology.rev131021.NetworkTopology;
@@ -67,7 +67,7 @@ public final class NetconfNodeUtils {
         final var host = node.requireHost();
         final int port = node.requirePort().getValue().toJava();
         final var ipAddress = host.getIpAddress();
-        return ipAddress != null ? new InetSocketAddress(IetfInetUtil.INSTANCE.inetAddressFor(ipAddress), port)
+        return ipAddress != null ? new InetSocketAddress(IetfInetUtil.inetAddressFor(ipAddress), port)
             : new InetSocketAddress(host.getDomainName().getValue(), port);
     }
 

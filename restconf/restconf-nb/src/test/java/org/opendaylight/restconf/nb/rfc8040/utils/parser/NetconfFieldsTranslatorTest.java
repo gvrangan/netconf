@@ -8,8 +8,6 @@
  */
 package org.opendaylight.restconf.nb.rfc8040.utils.parser;
 
-import static org.hamcrest.CoreMatchers.instanceOf;
-import static org.hamcrest.MatcherAssert.assertThat;
 import static org.junit.Assert.assertEquals;
 
 import java.util.List;
@@ -21,7 +19,6 @@ import org.opendaylight.restconf.api.query.FieldsParam;
 import org.opendaylight.restconf.common.context.InstanceIdentifierContext;
 import org.opendaylight.yangtools.yang.common.QName;
 import org.opendaylight.yangtools.yang.data.api.YangInstanceIdentifier;
-import org.opendaylight.yangtools.yang.data.api.YangInstanceIdentifier.AugmentationIdentifier;
 import org.opendaylight.yangtools.yang.data.api.YangInstanceIdentifier.NodeIdentifier;
 import org.opendaylight.yangtools.yang.data.api.YangInstanceIdentifier.NodeIdentifierWithPredicates;
 
@@ -41,11 +38,11 @@ public class NetconfFieldsTranslatorTest extends AbstractFieldsTranslatorTest<Ya
         assertEquals(1, result.size());
         final var pathArguments = result.get(0).getPathArguments();
         assertEquals(1, pathArguments.size());
-        assertEquals(LIBRARY_Q_NAME, pathArguments.get(0).getNodeType());
+        assertEquals(LIBRARY_QNAME, pathArguments.get(0).getNodeType());
     }
 
     @Override
-    protected void assertKeyedList(List<YangInstanceIdentifier> result) {
+    protected void assertKeyedList(final List<YangInstanceIdentifier> result) {
         assertEquals(1, result.size());
     }
 
@@ -53,10 +50,10 @@ public class NetconfFieldsTranslatorTest extends AbstractFieldsTranslatorTest<Ya
     protected void assertDoublePath(final List<YangInstanceIdentifier> result) {
         assertEquals(2, result.size());
 
-        final var libraryPath = assertPath(result, LIBRARY_Q_NAME);
+        final var libraryPath = assertPath(result, LIBRARY_QNAME);
         assertEquals(1, libraryPath.getPathArguments().size());
 
-        final var playerPath = assertPath(result, PLAYER_Q_NAME);
+        final var playerPath = assertPath(result, PLAYER_QNAME);
         assertEquals(1, playerPath.getPathArguments().size());
     }
 
@@ -65,12 +62,12 @@ public class NetconfFieldsTranslatorTest extends AbstractFieldsTranslatorTest<Ya
         assertEquals(1, result.size());
         final var pathArguments = result.get(0).getPathArguments();
         assertEquals(6, pathArguments.size());
-        assertEquals(LIBRARY_Q_NAME, pathArguments.get(0).getNodeType());
-        assertEquals(ARTIST_Q_NAME, pathArguments.get(1).getNodeType());
-        assertEquals(ARTIST_Q_NAME, pathArguments.get(2).getNodeType());
-        assertEquals(ALBUM_Q_NAME, pathArguments.get(3).getNodeType());
-        assertEquals(ALBUM_Q_NAME, pathArguments.get(4).getNodeType());
-        assertEquals(NAME_Q_NAME, pathArguments.get(5).getNodeType());
+        assertEquals(LIBRARY_QNAME, pathArguments.get(0).getNodeType());
+        assertEquals(ARTIST_QNAME, pathArguments.get(1).getNodeType());
+        assertEquals(ARTIST_QNAME, pathArguments.get(2).getNodeType());
+        assertEquals(ALBUM_QNAME, pathArguments.get(3).getNodeType());
+        assertEquals(ALBUM_QNAME, pathArguments.get(4).getNodeType());
+        assertEquals(NAME_QNAME, pathArguments.get(5).getNodeType());
     }
 
     @Override
@@ -78,19 +75,19 @@ public class NetconfFieldsTranslatorTest extends AbstractFieldsTranslatorTest<Ya
         assertEquals(1, result.size());
         final var pathArguments = result.get(0).getPathArguments();
         assertEquals(6, pathArguments.size());
-        assertEquals(LIBRARY_Q_NAME, pathArguments.get(0).getNodeType());
-        assertEquals(ARTIST_Q_NAME, pathArguments.get(1).getNodeType());
-        assertEquals(ARTIST_Q_NAME, pathArguments.get(2).getNodeType());
-        assertEquals(ALBUM_Q_NAME, pathArguments.get(3).getNodeType());
-        assertEquals(ALBUM_Q_NAME, pathArguments.get(4).getNodeType());
-        assertEquals(NAME_Q_NAME, pathArguments.get(5).getNodeType());
+        assertEquals(LIBRARY_QNAME, pathArguments.get(0).getNodeType());
+        assertEquals(ARTIST_QNAME, pathArguments.get(1).getNodeType());
+        assertEquals(ARTIST_QNAME, pathArguments.get(2).getNodeType());
+        assertEquals(ALBUM_QNAME, pathArguments.get(3).getNodeType());
+        assertEquals(ALBUM_QNAME, pathArguments.get(4).getNodeType());
+        assertEquals(NAME_QNAME, pathArguments.get(5).getNodeType());
     }
 
     @Override
     protected void assertNamespace(final List<YangInstanceIdentifier> result) {
         assertEquals(1, result.size());
         final var augmentedLibraryPath = assertPath(result, AUGMENTED_LIBRARY_Q_NAME);
-        assertEquals(2, augmentedLibraryPath.getPathArguments().size());
+        assertEquals(1, augmentedLibraryPath.getPathArguments().size());
     }
 
     @Override
@@ -174,10 +171,9 @@ public class NetconfFieldsTranslatorTest extends AbstractFieldsTranslatorTest<Ya
         assertEquals(1, result.size());
         final var pathArguments = result.get(0).getPathArguments();
 
-        assertEquals(3, pathArguments.size());
-        assertEquals(PLAYER_Q_NAME, pathArguments.get(0).getNodeType());
-        assertThat(pathArguments.get(1), instanceOf(AugmentationIdentifier.class));
-        assertEquals(SPEED_Q_NAME, pathArguments.get(2).getNodeType());
+        assertEquals(2, pathArguments.size());
+        assertEquals(PLAYER_QNAME, pathArguments.get(0).getNodeType());
+        assertEquals(SPEED_Q_NAME, pathArguments.get(1).getNodeType());
     }
 
     @Override

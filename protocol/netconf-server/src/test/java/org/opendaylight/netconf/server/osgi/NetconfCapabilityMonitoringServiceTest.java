@@ -15,8 +15,6 @@ import static org.mockito.Mockito.doNothing;
 import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
-import static org.opendaylight.netconf.api.xml.XmlNetconfConstants.URN_IETF_PARAMS_NETCONF_CAPABILITY_CANDIDATE_1_0;
-import static org.opendaylight.netconf.api.xml.XmlNetconfConstants.URN_IETF_PARAMS_NETCONF_CAPABILITY_URL_1_0;
 
 import java.util.HashSet;
 import java.util.List;
@@ -28,33 +26,28 @@ import org.junit.runner.RunWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.MockitoJUnitRunner;
-import org.opendaylight.netconf.api.capability.BasicCapability;
-import org.opendaylight.netconf.api.capability.Capability;
-import org.opendaylight.netconf.api.capability.YangModuleCapability;
-import org.opendaylight.netconf.api.monitoring.NetconfMonitoringService;
-import org.opendaylight.netconf.mapping.api.NetconfOperationServiceFactory;
-import org.opendaylight.netconf.notifications.BaseNotificationPublisherRegistration;
+import org.opendaylight.netconf.api.CapabilityURN;
+import org.opendaylight.netconf.server.api.monitoring.BasicCapability;
+import org.opendaylight.netconf.server.api.monitoring.Capability;
+import org.opendaylight.netconf.server.api.monitoring.NetconfMonitoringService;
+import org.opendaylight.netconf.server.api.monitoring.YangModuleCapability;
+import org.opendaylight.netconf.server.api.notifications.BaseNotificationPublisherRegistration;
+import org.opendaylight.netconf.server.api.operations.NetconfOperationServiceFactory;
 import org.opendaylight.yang.gen.v1.urn.ietf.params.xml.ns.yang.ietf.inet.types.rev130715.Uri;
 import org.opendaylight.yang.gen.v1.urn.ietf.params.xml.ns.yang.ietf.netconf.monitoring.rev101004.netconf.state.Capabilities;
 import org.opendaylight.yang.gen.v1.urn.ietf.params.xml.ns.yang.ietf.netconf.monitoring.rev101004.netconf.state.CapabilitiesBuilder;
 import org.opendaylight.yang.gen.v1.urn.ietf.params.xml.ns.yang.ietf.netconf.monitoring.rev101004.netconf.state.Schemas;
 import org.opendaylight.yang.gen.v1.urn.ietf.params.xml.ns.yang.ietf.netconf.monitoring.rev101004.netconf.state.schemas.Schema;
 import org.opendaylight.yang.gen.v1.urn.ietf.params.xml.ns.yang.ietf.netconf.notifications.rev120206.NetconfCapabilityChange;
-import org.opendaylight.yangtools.yang.common.Revision;
-import org.opendaylight.yangtools.yang.common.XMLNamespace;
-import org.opendaylight.yangtools.yang.model.api.Module;
 
 @RunWith(MockitoJUnitRunner.StrictStubs.class)
 public class NetconfCapabilityMonitoringServiceTest {
-
     private static final String TEST_MODULE_CONTENT = "content";
     private static final String TEST_MODULE_CONTENT2 = "content2";
     private static final String TEST_MODULE_REV = "1970-01-01";
     private static final String TEST_MODULE_REV2 = "1970-01-02";
     private static final Uri TEST_MODULE_NAMESPACE = new Uri("testModuleNamespace");
     private static final String TEST_MODULE_NAME = "testModule";
-    private static final Revision  TEST_MODULE_DATE = Revision.of(TEST_MODULE_REV);
-    private static final Revision TEST_MODULE_DATE2 = Revision.of(TEST_MODULE_REV2);
 
     private YangModuleCapability moduleCapability1;
     private YangModuleCapability moduleCapability2;
@@ -62,10 +55,6 @@ public class NetconfCapabilityMonitoringServiceTest {
 
     private final Set<Capability> capabilities = new HashSet<>();
 
-    @Mock
-    private Module moduleMock;
-    @Mock
-    private Module moduleMock2;
     @Mock
     private NetconfOperationServiceFactory operationServiceFactoryMock;
     @Mock
@@ -77,20 +66,16 @@ public class NetconfCapabilityMonitoringServiceTest {
 
     @Before
     public void setUp() {
-        doReturn(XMLNamespace.of(TEST_MODULE_NAMESPACE.getValue())).when(moduleMock).getNamespace();
-        doReturn(TEST_MODULE_NAME).when(moduleMock).getName();
-        doReturn(Optional.of(TEST_MODULE_DATE)).when(moduleMock).getRevision();
-        moduleCapability1 = new YangModuleCapability(moduleMock, TEST_MODULE_CONTENT);
+        moduleCapability1 = new YangModuleCapability(TEST_MODULE_NAMESPACE.getValue(), TEST_MODULE_NAME,
+            TEST_MODULE_REV, TEST_MODULE_CONTENT);
 
         capabilities.add(moduleCapability1);
 
-        doReturn(XMLNamespace.of(TEST_MODULE_NAMESPACE.getValue())).when(moduleMock2).getNamespace();
-        doReturn(TEST_MODULE_NAME).when(moduleMock2).getName();
-        doReturn(Optional.of(TEST_MODULE_DATE2)).when(moduleMock2).getRevision();
-        moduleCapability2 = new YangModuleCapability(moduleMock2, TEST_MODULE_CONTENT2);
+        moduleCapability2 = new YangModuleCapability(TEST_MODULE_NAMESPACE.getValue(), TEST_MODULE_NAME,
+            TEST_MODULE_REV2, TEST_MODULE_CONTENT2);
 
-        capabilities.add(new BasicCapability("urn:ietf:params:netconf:base:1.0"));
-        capabilities.add(new BasicCapability("urn:ietf:params:netconf:base:1.1"));
+        capabilities.add(new BasicCapability(CapabilityURN.BASE));
+        capabilities.add(new BasicCapability(CapabilityURN.BASE_1_1));
         capabilities.add(new BasicCapability("urn:ietf:params:xml:ns:yang:ietf-inet-types?module=ietf-inet-types&amp;"
                 + "revision=2010-09-24"));
 
@@ -107,7 +92,7 @@ public class NetconfCapabilityMonitoringServiceTest {
         monitoringService.onCapabilitiesChanged(capabilities, Set.of());
         monitoringService.setNotificationPublisher(notificationPublisher);
         monitoringService.registerListener(listener);
-        capabilitiesSize = monitoringService.getCapabilities().getCapability().size();
+        capabilitiesSize = monitoringService.getCapabilities().requireCapability().size();
     }
 
     @Test
@@ -123,7 +108,7 @@ public class NetconfCapabilityMonitoringServiceTest {
     @Test
     public void testGetSchemas() {
         Schemas schemas = monitoringService.getSchemas();
-        Schema schema = schemas.getSchema().values().iterator().next();
+        Schema schema = schemas.nonnullSchema().values().iterator().next();
         assertEquals(TEST_MODULE_NAMESPACE, schema.getNamespace());
         assertEquals(TEST_MODULE_NAME, schema.getIdentifier());
         assertEquals(TEST_MODULE_REV, schema.getVersion());
@@ -153,8 +138,8 @@ public class NetconfCapabilityMonitoringServiceTest {
             exp.add(new Uri(capability.getCapabilityUri()));
         }
         //candidate and url capabilities are added by monitoring service automatically
-        exp.add(new Uri(URN_IETF_PARAMS_NETCONF_CAPABILITY_CANDIDATE_1_0));
-        exp.add(new Uri(URN_IETF_PARAMS_NETCONF_CAPABILITY_URL_1_0));
+        exp.add(new Uri("urn:ietf:params:netconf:capability:candidate:1.0"));
+        exp.add(new Uri("urn:ietf:params:netconf:capability:url:1.0?scheme=file"));
         Capabilities expected = new CapabilitiesBuilder().setCapability(exp).build();
         Capabilities actual = monitoringService.getCapabilities();
         assertEquals(new HashSet<>(expected.getCapability()), new HashSet<>(actual.getCapability()));
@@ -162,7 +147,7 @@ public class NetconfCapabilityMonitoringServiceTest {
 
     @Test
     public void testClose() {
-        assertEquals(6, monitoringService.getCapabilities().getCapability().size());
+        assertEquals(6, monitoringService.getCapabilities().requireCapability().size());
         monitoringService.close();
         assertEquals(Set.of(), monitoringService.getCapabilities().getCapability());
     }
@@ -186,9 +171,9 @@ public class NetconfCapabilityMonitoringServiceTest {
 
         //verify listener calls
         final List<Capabilities> listenerValues = monitoringListenerCaptor.getAllValues();
-        final Set<Uri> afterRegisterState = listenerValues.get(0).getCapability();
-        final Set<Uri> afterAddState = listenerValues.get(1).getCapability();
-        final Set<Uri> afterRemoveState = listenerValues.get(2).getCapability();
+        final Set<Uri> afterRegisterState = listenerValues.get(0).requireCapability();
+        final Set<Uri> afterAddState = listenerValues.get(1).requireCapability();
+        final Set<Uri> afterRemoveState = listenerValues.get(2).requireCapability();
 
         assertEquals(capabilitiesSize, afterRegisterState.size());
         assertEquals(capabilitiesSize + 1, afterAddState.size());

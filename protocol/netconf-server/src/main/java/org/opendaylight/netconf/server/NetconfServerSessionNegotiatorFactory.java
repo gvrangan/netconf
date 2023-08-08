@@ -17,16 +17,17 @@ import io.netty.util.concurrent.Promise;
 import java.net.SocketAddress;
 import java.util.Set;
 import org.checkerframework.checker.index.qual.NonNegative;
+import org.opendaylight.netconf.api.CapabilityURN;
 import org.opendaylight.netconf.api.NetconfSessionListenerFactory;
-import org.opendaylight.netconf.api.messages.NetconfHelloMessage;
-import org.opendaylight.netconf.api.monitoring.NetconfMonitoringService;
-import org.opendaylight.netconf.api.xml.XmlNetconfConstants;
-import org.opendaylight.netconf.mapping.api.NetconfOperationService;
-import org.opendaylight.netconf.mapping.api.NetconfOperationServiceFactory;
+import org.opendaylight.netconf.api.messages.HelloMessage;
 import org.opendaylight.netconf.nettyutil.AbstractNetconfSessionNegotiator;
 import org.opendaylight.netconf.nettyutil.NetconfSessionNegotiatorFactory;
-import org.opendaylight.netconf.server.osgi.NetconfOperationRouter;
+import org.opendaylight.netconf.server.api.SessionIdProvider;
+import org.opendaylight.netconf.server.api.monitoring.NetconfMonitoringService;
+import org.opendaylight.netconf.server.api.operations.NetconfOperationService;
+import org.opendaylight.netconf.server.api.operations.NetconfOperationServiceFactory;
 import org.opendaylight.netconf.server.osgi.NetconfOperationRouterImpl;
+import org.opendaylight.yang.gen.v1.urn.ietf.params.xml.ns.netconf.base._1._0.rev110601.SessionIdType;
 import org.opendaylight.yang.gen.v1.urn.ietf.params.xml.ns.yang.ietf.inet.types.rev130715.Uri;
 import org.opendaylight.yang.gen.v1.urn.ietf.params.xml.ns.yang.ietf.netconf.monitoring.rev101004.netconf.state.Capabilities;
 
@@ -34,11 +35,10 @@ public class NetconfServerSessionNegotiatorFactory
     implements NetconfSessionNegotiatorFactory<NetconfServerSession, NetconfServerSessionListener> {
 
     public static final Set<String> DEFAULT_BASE_CAPABILITIES = ImmutableSet.of(
-            XmlNetconfConstants.URN_IETF_PARAMS_NETCONF_BASE_1_0,
-            XmlNetconfConstants.URN_IETF_PARAMS_NETCONF_BASE_1_1,
-            XmlNetconfConstants.URN_IETF_PARAMS_NETCONF_CAPABILITY_EXI_1_0,
-            XmlNetconfConstants.URN_IETF_PARAMS_NETCONF_CAPABILITY_NOTIFICATION_1_0
-    );
+        CapabilityURN.BASE,
+        CapabilityURN.BASE_1_1,
+        CapabilityURN.EXI,
+        CapabilityURN.NOTIFICATION);
 
     private final @NonNegative int maximumIncomingChunkSize;
     private final Timer timer;
@@ -89,7 +89,7 @@ public class NetconfServerSessionNegotiatorFactory
         final ImmutableSet.Builder<String> b = ImmutableSet.builder();
         b.addAll(baseCapabilities);
         // Base 1.0 capability is supported by default
-        b.add(XmlNetconfConstants.URN_IETF_PARAMS_NETCONF_BASE_1_0);
+        b.add(CapabilityURN.BASE);
         return b.build();
     }
 
@@ -107,35 +107,33 @@ public class NetconfServerSessionNegotiatorFactory
     public NetconfServerSessionNegotiator getSessionNegotiator(
             final NetconfSessionListenerFactory<NetconfServerSessionListener> defunctSessionListenerFactory,
             final Channel channel, final Promise<NetconfServerSession> promise) {
-        final long sessionId = idProvider.getNextSessionId();
+        final var sessionId = idProvider.getNextSessionId();
 
         return new NetconfServerSessionNegotiator(createHelloMessage(sessionId, monitoringService), sessionId, promise,
-            channel, timer, getListener(Long.toString(sessionId), channel.parent().localAddress()),
+            channel, timer, getListener(sessionId, channel.parent().localAddress()),
             connectionTimeoutMillis, maximumIncomingChunkSize);
     }
 
-    private NetconfServerSessionListener getListener(final String netconfSessionIdForReporting,
-                                                     final SocketAddress socketAddress) {
-        final NetconfOperationService service = getOperationServiceForAddress(netconfSessionIdForReporting,
-                socketAddress);
-        final NetconfOperationRouter operationRouter =
-                new NetconfOperationRouterImpl(service, monitoringService, netconfSessionIdForReporting);
-        return new NetconfServerSessionListener(operationRouter, monitoringService, service);
+    private NetconfServerSessionListener getListener(final SessionIdType sessionId, final SocketAddress socketAddress) {
+        final var service = getOperationServiceForAddress(sessionId, socketAddress);
+        return new NetconfServerSessionListener(
+            new NetconfOperationRouterImpl(service, monitoringService, sessionId), monitoringService, service);
     }
 
-    protected NetconfOperationService getOperationServiceForAddress(final String netconfSessionIdForReporting,
+    protected NetconfOperationService getOperationServiceForAddress(final SessionIdType sessionId,
                                                                     final SocketAddress socketAddress) {
-        return aggregatedOpService.createService(netconfSessionIdForReporting);
+        return aggregatedOpService.createService(sessionId);
     }
 
     protected final NetconfOperationServiceFactory getOperationServiceFactory() {
         return aggregatedOpService;
     }
 
-    private NetconfHelloMessage createHelloMessage(
-            final long sessionId, final NetconfMonitoringService capabilityProvider) {
-        return NetconfHelloMessage.createServerHello(Sets.union(transformCapabilities(capabilityProvider
-                .getCapabilities()), baseCapabilities), sessionId);
+    private HelloMessage createHelloMessage(final SessionIdType sessionId,
+            final NetconfMonitoringService capabilityProvider) {
+        return HelloMessage.createServerHello(Sets.union(
+            transformCapabilities(capabilityProvider.getCapabilities()), baseCapabilities),
+            sessionId);
     }
 
     public static Set<String> transformCapabilities(final Capabilities capabilities) {

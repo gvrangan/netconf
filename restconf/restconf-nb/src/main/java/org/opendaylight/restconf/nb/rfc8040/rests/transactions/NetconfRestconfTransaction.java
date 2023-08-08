@@ -11,7 +11,6 @@ import static java.util.Objects.requireNonNull;
 import static org.opendaylight.mdsal.common.api.LogicalDatastoreType.CONFIGURATION;
 
 import com.google.common.collect.ImmutableList;
-import com.google.common.util.concurrent.FluentFuture;
 import com.google.common.util.concurrent.FutureCallback;
 import com.google.common.util.concurrent.Futures;
 import com.google.common.util.concurrent.ListenableFuture;
@@ -47,18 +46,30 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 final class NetconfRestconfTransaction extends RestconfTransaction {
-
     private static final Logger LOG = LoggerFactory.getLogger(NetconfRestconfTransaction.class);
 
-    private final NetconfDataTreeService netconfService;
     private final List<ListenableFuture<? extends DOMRpcResult>> resultsFutures =
         Collections.synchronizedList(new ArrayList<>());
+    private final NetconfDataTreeService netconfService;
+
     private volatile boolean isLocked = false;
 
     NetconfRestconfTransaction(final NetconfDataTreeService netconfService) {
         this.netconfService = requireNonNull(netconfService);
-        final ListenableFuture<? extends DOMRpcResult> lockResult = netconfService.lock();
-        Futures.addCallback(lockResult, lockOperationCallback, MoreExecutors.directExecutor());
+        final var lockResult = netconfService.lock();
+        Futures.addCallback(lockResult, new FutureCallback<DOMRpcResult>() {
+            @Override
+            public void onSuccess(final DOMRpcResult rpcResult) {
+                if (rpcResult != null && allWarnings(rpcResult.errors())) {
+                    isLocked = true;
+                }
+            }
+
+            @Override
+            public void onFailure(final Throwable throwable) {
+                // do nothing
+            }
+        }, MoreExecutors.directExecutor());
         resultsFutures.add(lockResult);
     }
 
@@ -89,10 +100,10 @@ final class NetconfRestconfTransaction extends RestconfTransaction {
             final EffectiveModelContext schemaContext) {
         if (data instanceof MapNode || data instanceof LeafSetNode) {
             final NormalizedNode emptySubTree = ImmutableNodes.fromInstanceId(schemaContext, path);
-            merge(YangInstanceIdentifier.create(emptySubTree.getIdentifier()), emptySubTree);
+            merge(YangInstanceIdentifier.of(emptySubTree.name()), emptySubTree);
 
             for (final NormalizedNode child : ((NormalizedNodeContainer<?>) data).body()) {
-                final YangInstanceIdentifier childPath = path.node(child.getIdentifier());
+                final YangInstanceIdentifier childPath = path.node(child.name());
                 enqueueOperation(() -> netconfService.create(CONFIGURATION, childPath, child, Optional.empty()));
             }
         } else {
@@ -105,10 +116,10 @@ final class NetconfRestconfTransaction extends RestconfTransaction {
             final EffectiveModelContext schemaContext) {
         if (data instanceof MapNode || data instanceof LeafSetNode) {
             final NormalizedNode emptySubTree = ImmutableNodes.fromInstanceId(schemaContext, path);
-            merge(YangInstanceIdentifier.create(emptySubTree.getIdentifier()), emptySubTree);
+            merge(YangInstanceIdentifier.of(emptySubTree.name()), emptySubTree);
 
             for (final NormalizedNode child : ((NormalizedNodeContainer<?>) data).body()) {
-                final YangInstanceIdentifier childPath = path.node(child.getIdentifier());
+                final YangInstanceIdentifier childPath = path.node(child.name());
                 enqueueOperation(() -> netconfService.replace(CONFIGURATION, childPath, child, Optional.empty()));
             }
         } else {
@@ -117,7 +128,7 @@ final class NetconfRestconfTransaction extends RestconfTransaction {
     }
 
     @Override
-    public FluentFuture<? extends @NonNull CommitInfo> commit() {
+    public ListenableFuture<? extends @NonNull CommitInfo> commit() {
         final SettableFuture<CommitInfo> commitResult = SettableFuture.create();
 
         // First complete all resultsFutures and merge them ...
@@ -127,7 +138,7 @@ final class NetconfRestconfTransaction extends RestconfTransaction {
         Futures.addCallback(resultErrors, new FutureCallback<>() {
             @Override
             public void onSuccess(final DOMRpcResult result) {
-                final Collection<? extends RpcError> errors = result.getErrors();
+                final Collection<? extends RpcError> errors = result.errors();
                 if (!allWarnings(errors)) {
                     Futures.whenAllComplete(discardAndUnlock()).run(
                         () -> commitResult.setException(toCommitFailedException(errors)),
@@ -139,7 +150,7 @@ final class NetconfRestconfTransaction extends RestconfTransaction {
                 Futures.addCallback(netconfService.commit(), new FutureCallback<DOMRpcResult>() {
                     @Override
                     public void onSuccess(final DOMRpcResult rpcResult) {
-                        final Collection<? extends RpcError> errors = rpcResult.getErrors();
+                        final Collection<? extends RpcError> errors = rpcResult.errors();
                         if (errors.isEmpty()) {
                             Futures.whenAllComplete(netconfService.unlock()).run(
                                 () -> commitResult.set(CommitInfo.empty()),
@@ -172,7 +183,12 @@ final class NetconfRestconfTransaction extends RestconfTransaction {
             }
         }, MoreExecutors.directExecutor());
 
-        return FluentFuture.from(commitResult);
+        return commitResult;
+    }
+
+    @Override
+    ListenableFuture<Optional<NormalizedNode>> read(final YangInstanceIdentifier path) {
+        return netconfService.getConfig(path);
     }
 
     private List<ListenableFuture<?>> discardAndUnlock() {
@@ -180,23 +196,9 @@ final class NetconfRestconfTransaction extends RestconfTransaction {
         if (isLocked) {
             return List.of(netconfService.discardChanges(), netconfService.unlock());
         } else {
-            return Collections.emptyList();
+            return List.of();
         }
     }
-
-    private final FutureCallback<DOMRpcResult> lockOperationCallback = new FutureCallback<>() {
-        @Override
-        public void onSuccess(final DOMRpcResult rpcResult) {
-            if (rpcResult != null && allWarnings(rpcResult.getErrors())) {
-                isLocked = true;
-            }
-        }
-
-        @Override
-        public void onFailure(final Throwable throwable) {
-            // do nothing
-        }
-    };
 
     private void enqueueOperation(final Supplier<ListenableFuture<? extends DOMRpcResult>> operation) {
         final ListenableFuture<? extends DOMRpcResult> operationFuture;
@@ -206,7 +208,7 @@ final class NetconfRestconfTransaction extends RestconfTransaction {
                 operationFuture = Futures.transformAsync(resultsFutures.get(0),
                     result -> {
                         // ... then add new operation to the chain if lock was successful
-                        if (result != null && (result.getErrors().isEmpty() || allWarnings(result.getErrors()))) {
+                        if (result != null && (result.errors().isEmpty() || allWarnings(result.errors()))) {
                             return operation.get();
                         } else {
                             return Futures.immediateFailedFuture(new NetconfDocumentedException("Lock operation failed",
@@ -227,7 +229,7 @@ final class NetconfRestconfTransaction extends RestconfTransaction {
 
     // Transform list of futures related to RPC operation into a single Future
     private static ListenableFuture<DOMRpcResult> mergeFutures(
-        final List<ListenableFuture<? extends DOMRpcResult>> futures) {
+            final List<ListenableFuture<? extends DOMRpcResult>> futures) {
         return Futures.whenAllComplete(futures).call(() -> {
             if (futures.size() == 1) {
                 // Fast path
@@ -236,7 +238,7 @@ final class NetconfRestconfTransaction extends RestconfTransaction {
 
             final var builder = ImmutableList.<RpcError>builder();
             for (ListenableFuture<? extends DOMRpcResult> future : futures) {
-                builder.addAll(Futures.getDone(future).getErrors());
+                builder.addAll(Futures.getDone(future).errors());
             }
             return new DefaultDOMRpcResult(null, builder.build());
         }, MoreExecutors.directExecutor());
@@ -266,9 +268,9 @@ final class NetconfRestconfTransaction extends RestconfTransaction {
         Futures.addCallback(operationResult, new FutureCallback<DOMRpcResult>() {
             @Override
             public void onSuccess(final DOMRpcResult rpcResult) {
-                if (rpcResult != null && !rpcResult.getErrors().isEmpty()) {
+                if (rpcResult != null && !rpcResult.errors().isEmpty()) {
                     LOG.error("Errors occurred during processing of the RPC operation: {}",
-                        rpcResult.getErrors().stream().map(Object::toString).collect(Collectors.joining(",")));
+                        rpcResult.errors().stream().map(Object::toString).collect(Collectors.joining(",")));
                 }
             }
 

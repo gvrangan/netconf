@@ -36,13 +36,15 @@ final class XmlDataTreeCandidateSerializer extends AbstractWebsocketSerializer<E
         xmlWriter.writeStartElement(DATA_CHANGE_EVENT_ELEMENT);
         serializePath(nodePath);
 
-        if (!skipData && candidate.getDataAfter().isPresent()) {
-            xmlWriter.writeStartElement("data");
-            NormalizedNodeWriter nnWriter = NormalizedNodeWriter.forStreamWriter(nodeStreamWriter);
-            nnWriter.write(candidate.getDataAfter().orElseThrow());
-            nnWriter.flush();
-
-            xmlWriter.writeEndElement();
+        if (!skipData) {
+            final var dataAfter = candidate.dataAfter();
+            if (dataAfter != null) {
+                xmlWriter.writeStartElement("data");
+                NormalizedNodeWriter nnWriter = NormalizedNodeWriter.forStreamWriter(nodeStreamWriter);
+                nnWriter.write(dataAfter);
+                nnWriter.flush();
+                xmlWriter.writeEndElement();
+            }
         }
         serializeOperation(candidate);
 
@@ -59,7 +61,7 @@ final class XmlDataTreeCandidateSerializer extends AbstractWebsocketSerializer<E
     @Override
     public void serializeOperation(final DataTreeCandidateNode candidate) throws XMLStreamException {
         xmlWriter.writeStartElement("operation");
-        xmlWriter.writeCharacters(modificationTypeToOperation(candidate, candidate.getModificationType()));
+        xmlWriter.writeCharacters(modificationTypeToOperation(candidate, candidate.modificationType()));
         xmlWriter.writeEndElement();
     }
 }

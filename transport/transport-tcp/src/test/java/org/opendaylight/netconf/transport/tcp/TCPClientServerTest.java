@@ -37,8 +37,8 @@ import org.opendaylight.netconf.transport.api.TransportChannelListener;
 import org.opendaylight.yang.gen.v1.urn.ietf.params.xml.ns.yang.ietf.inet.types.rev130715.Host;
 import org.opendaylight.yang.gen.v1.urn.ietf.params.xml.ns.yang.ietf.inet.types.rev130715.IetfInetUtil;
 import org.opendaylight.yang.gen.v1.urn.ietf.params.xml.ns.yang.ietf.inet.types.rev130715.PortNumber;
-import org.opendaylight.yang.gen.v1.urn.ietf.params.xml.ns.yang.ietf.tcp.client.rev221212.TcpClientGrouping;
-import org.opendaylight.yang.gen.v1.urn.ietf.params.xml.ns.yang.ietf.tcp.server.rev221212.TcpServerGrouping;
+import org.opendaylight.yang.gen.v1.urn.ietf.params.xml.ns.yang.ietf.tcp.client.rev230417.TcpClientGrouping;
+import org.opendaylight.yang.gen.v1.urn.ietf.params.xml.ns.yang.ietf.tcp.server.rev230417.TcpServerGrouping;
 import org.opendaylight.yangtools.yang.common.Uint16;
 
 @ExtendWith(MockitoExtension.class)
@@ -68,7 +68,7 @@ public class TCPClientServerTest {
     @Test
     public void integrationTest() throws Exception {
         // localhost address, so we do not leak things around
-        final var loopbackAddr = IetfInetUtil.INSTANCE.ipAddressFor(InetAddress.getLoopbackAddress());
+        final var loopbackAddr = IetfInetUtil.ipAddressFor(InetAddress.getLoopbackAddress());
 
         // Server-side config
         doReturn(loopbackAddr).when(serverGrouping).getLocalAddress();
